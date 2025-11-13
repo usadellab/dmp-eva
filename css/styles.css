@@ -243,6 +243,16 @@ header h1 {
     color: #495057;
 }
 
+/* Criterion ID Column */
+.criterion-id {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-weight: 600;
+    text-align: center;
+    color: #0d6efd;
+    font-size: 0.9rem;
+    background-color: #f8f9fa;
+}
+
 /* Loading Overlay */
 .loading-overlay {
     position: absolute;
@@ -444,6 +454,32 @@ small, .small {
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
 }
 
+/* Scrollable Columns */
+.scrollable-column {
+    max-height: calc(100vh - 180px);
+    overflow-y: auto;
+    padding-right: 15px;
+    padding-left: 15px;
+}
+
+.scrollable-column::-webkit-scrollbar {
+    width: 10px;
+}
+
+.scrollable-column::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 5px;
+}
+
+.scrollable-column::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 5px;
+}
+
+.scrollable-column::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
 /* File warning tooltip */
 #criteriaFileName[title],
 #dmpFileName[title] {
@@ -469,4 +505,103 @@ small, .small {
 
 .alert-success {
     padding: 0.5rem 1rem;
+}
+
+/* ======================================
+   STREAMING OUTPUT DISPLAY
+   ====================================== */
+
+/* Streaming container */
+#streamingOutputContainer {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+/* Section headers */
+.streaming-section-header {
+    color: #495057;
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 0.5rem;
+    padding: 0.25rem 0;
+}
+
+/* Content areas */
+.streaming-content {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    padding: 0.75rem;
+    border-radius: 4px;
+    background-color: #ffffff;
+    border: 1px solid #e0e0e0;
+    min-height: 50px;
+    position: relative;
+}
+
+/* Reasoning content (thinking) */
+.reasoning-content {
+    background-color: #fff9e6;
+    border-color: #ffd966;
+    color: #856404;
+}
+
+/* Response content */
+.response-content {
+    background-color: #f0f8ff;
+    border-color: #b8d4e8;
+    color: #0c5460;
+}
+
+/* Streaming cursor animation */
+.streaming-content::after {
+    content: '▊';
+    animation: blink 1s infinite;
+    margin-left: 2px;
+    color: #0d6efd;
+}
+
+.streaming-content.stream-complete::after {
+    content: '';
+    animation: none;
+}
+
+@keyframes blink {
+    0%, 49% {
+        opacity: 1;
+    }
+    50%, 100% {
+        opacity: 0;
+    }
+}
+
+/* Custom scrollbar for streaming container */
+#streamingOutputContainer::-webkit-scrollbar {
+    width: 8px;
+}
+
+#streamingOutputContainer::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+#streamingOutputContainer::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+#streamingOutputContainer::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Smooth scroll behavior */
+#streamingOutputContainer {
+    scroll-behavior: smooth;
 }

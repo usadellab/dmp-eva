@@ -22,7 +22,8 @@
       messagesParamName: 'messages',
       temperature: 0.3,
       maxTokens: 8000,
-      responseFormat: 'json_object'
+      responseFormat: 'json_object',
+      streamEnabled: true
     },
     openai: {
       name: 'OpenAI Compatible',
@@ -35,7 +36,8 @@
       messagesParamName: 'messages',
       temperature: 0.3,
       maxTokens: 8000,
-      responseFormat: 'json_object'
+      responseFormat: 'json_object',
+      streamEnabled: true
     }
   };
 
@@ -217,6 +219,11 @@
       body.response_format = { type: 'json_object' };
     }
 
+    // Add streaming if enabled in profile
+    if (profile.streamEnabled !== false) {
+      body.stream = true;
+    }
+
     return {
       url: profile.endpoint,
       options: {
@@ -252,6 +259,10 @@
 
     if (profile.responseFormat === 'json_object') {
       body.response_format = { type: 'json_object' };
+    }
+
+    if (profile.streamEnabled !== false) {
+      body.stream = true;
     }
 
     const code = `fetch('${profile.endpoint}', {

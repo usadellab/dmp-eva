@@ -27,7 +27,7 @@
 
         <div class="row">
             <!-- Left Column: Configuration & Upload -->
-            <div class="col-lg-5">
+            <div class="col-lg-5 scrollable-column">
                 <!-- API Configuration Card -->
                 <div class="card mb-4">
                     <div class="card-header">
@@ -147,7 +147,7 @@
             </div>
 
             <!-- Right Column: Results -->
-            <div class="col-lg-7">
+            <div class="col-lg-7 scrollable-column">
                 <!-- Status Card -->
                 <div class="card mb-4" id="statusCard">
                     <div class="card-body">
@@ -156,13 +156,32 @@
                             Upload files and configure API to start evaluation
                         </div>
                         <div id="statusProcessing" class="d-none">
-                            <div class="d-flex align-items-center">
+                            <div class="d-flex align-items-center mb-3">
                                 <div class="spinner-border spinner-border-sm text-primary me-3" role="status">
                                     <span class="visually-hidden">Loading...</span>
                                 </div>
                                 <div>
                                     <strong>Processing...</strong>
                                     <div id="statusMessage" class="text-muted small"></div>
+                                </div>
+                            </div>
+
+                            <!-- Streaming Output Display -->
+                            <div id="streamingOutputContainer" class="d-none">
+                                <!-- Reasoning Section (for reasoning models like DeepSeek-R1) -->
+                                <div id="streamingReasoningSection" class="d-none mb-3">
+                                    <div class="streaming-section-header">
+                                        <i class="fas fa-brain me-2"></i><strong>Model Thinking:</strong>
+                                    </div>
+                                    <div id="streamingReasoningContent" class="streaming-content reasoning-content"></div>
+                                </div>
+
+                                <!-- Response Section -->
+                                <div id="streamingResponseSection" class="d-none">
+                                    <div class="streaming-section-header">
+                                        <i class="fas fa-pen me-2"></i><strong>Response:</strong>
+                                    </div>
+                                    <div id="streamingResponseContent" class="streaming-content response-content"></div>
                                 </div>
                             </div>
                         </div>
@@ -212,6 +231,7 @@
                                 <table class="table table-hover" id="scoresTable">
                                     <thead class="table-light">
                                         <tr>
+                                            <th style="width: 50px;">ID</th>
                                             <th>Category</th>
                                             <th>Criteria</th>
                                             <th style="width: 100px;">Score</th>
@@ -423,6 +443,12 @@
                         <textarea class="form-control font-monospace" id="dmpTextArea" rows="15"
                                   placeholder="Paste your DMP document text here..."></textarea>
                         <small class="form-text text-muted">Plain text, markdown, or structured text formats work best</small>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="useExampleDmp">
+                        <label class="form-check-label" for="useExampleDmp">
+                            Use example DMP document (Alpine Biodiversity Research Project)
+                        </label>
                     </div>
                 </div>
                 <div class="modal-footer">

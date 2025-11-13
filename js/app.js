@@ -508,9 +508,10 @@
 
     // Open criteria paste modal
     pasteCriteriaBtn.addEventListener('click', () => {
-      // Load default criteria if checkbox is checked
+      // Load phase-specific default criteria if checkbox is checked
       if (useDefaultCriteria.checked) {
-        criteriaTextArea.value = window.CriteriaExtractor.DEFAULT_CRITERIA_TEXT;
+        const phase = document.getElementById('projectPhase').value;
+        criteriaTextArea.value = window.CriteriaExtractor.getDefaultCriteriaText(phase);
       }
       pasteCriteriaModal.show();
     });
@@ -518,15 +519,41 @@
     // Toggle default criteria text
     useDefaultCriteria.addEventListener('change', (e) => {
       if (e.target.checked) {
-        criteriaTextArea.value = window.CriteriaExtractor.DEFAULT_CRITERIA_TEXT;
+        const phase = document.getElementById('projectPhase').value;
+        criteriaTextArea.value = window.CriteriaExtractor.getDefaultCriteriaText(phase);
       } else {
         criteriaTextArea.value = '';
       }
     });
 
+    // Phase change listener - update criteria if default is checked
+    const projectPhaseSelect = document.getElementById('projectPhase');
+    projectPhaseSelect.addEventListener('change', () => {
+      // If modal is open and default criteria checkbox is checked, update the text
+      if (useDefaultCriteria.checked) {
+        const phase = projectPhaseSelect.value;
+        criteriaTextArea.value = window.CriteriaExtractor.getDefaultCriteriaText(phase);
+      }
+    });
+
     // Open DMP paste modal
     pasteDmpBtn.addEventListener('click', () => {
+      const useExampleDmp = document.getElementById('useExampleDmp');
+      // Load example DMP if checkbox is checked
+      if (useExampleDmp.checked) {
+        document.getElementById('dmpTextArea').value = window.CriteriaExtractor.EXAMPLE_DMP_TEXT;
+      }
       pasteDmpModal.show();
+    });
+
+    // Toggle example DMP text
+    const useExampleDmp = document.getElementById('useExampleDmp');
+    useExampleDmp.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        document.getElementById('dmpTextArea').value = window.CriteriaExtractor.EXAMPLE_DMP_TEXT;
+      } else {
+        document.getElementById('dmpTextArea').value = '';
+      }
     });
 
     // Save criteria text
@@ -678,6 +705,7 @@
     // Update UI to show processing
     showStatus('processing');
     hideResults();
+    clearStreamingDisplay();
 
     try {
       // Run evaluation
@@ -767,6 +795,7 @@
       const categoryName = getCategoryGroupName(categoryGroup);
 
       row.innerHTML = `
+        <td class="criterion-id">${cat.id}</td>
         <td class="category-label">${categoryName}</td>
         <td>${cat.name}</td>
         <td class="score-cell">${cat.score}/100</td>
@@ -847,9 +876,106 @@
    * Update status message during processing
    */
   function updateStatusMessage(message) {
-    const statusMessage = document.getElementById('statusMessage');
-    if (statusMessage) {
-      statusMessage.textContent = message;
+    // Handle both string messages and streaming objects
+    if (typeof message === 'string') {
+      // Simple status message
+      const statusMessage = document.getElementById('statusMessage');
+      if (statusMessage) {
+        statusMessage.textContent = message;
+      }
+    } else if (typeof message === 'object') {
+      // Streaming message object
+      handleStreamingMessage(message);
+    }
+  }
+
+  /**
+   * Handle streaming messages from LLM
+   */
+  function handleStreamingMessage(messageObj) {
+    const streamingContainer = document.getElementById('streamingOutputContainer');
+    const reasoningSection = document.getElementById('streamingReasoningSection');
+    const responseSection = document.getElementById('streamingResponseSection');
+    const reasoningContent = document.getElementById('streamingReasoningContent');
+    const responseContent = document.getElementById('streamingResponseContent');
+
+    if (messageObj.type === 'stream') {
+      // Show streaming container on first chunk
+      if (streamingContainer.classList.contains('d-none')) {
+        streamingContainer.classList.remove('d-none');
+      }
+
+      // Handle streaming chunks
+      if (messageObj.isReasoning) {
+        // Reasoning content (thinking)
+        if (reasoningSection.classList.contains('d-none')) {
+          reasoningSection.classList.remove('d-none');
+        }
+        reasoningContent.textContent += messageObj.content;
+        reasoningContent.classList.remove('stream-complete');
+
+        // Auto-scroll to bottom
+        streamingContainer.scrollTop = streamingContainer.scrollHeight;
+
+      } else {
+        // Regular response content
+        if (responseSection.classList.contains('d-none')) {
+          responseSection.classList.remove('d-none');
+        }
+        responseContent.textContent += messageObj.content;
+        responseContent.classList.remove('stream-complete');
+
+        // Auto-scroll to bottom
+        streamingContainer.scrollTop = streamingContainer.scrollHeight;
+      }
+
+    } else if (messageObj.type === 'status') {
+      // Regular status message
+      const statusMessage = document.getElementById('statusMessage');
+      if (statusMessage) {
+        statusMessage.textContent = messageObj.content;
+      }
+
+    } else if (messageObj.type === 'complete') {
+      // Mark streaming as complete
+      if (reasoningContent) {
+        reasoningContent.classList.add('stream-complete');
+      }
+      if (responseContent) {
+        responseContent.classList.add('stream-complete');
+      }
+
+      // Update status message
+      const statusMessage = document.getElementById('statusMessage');
+      if (statusMessage) {
+        statusMessage.textContent = messageObj.content || 'Processing complete...';
+      }
+    }
+  }
+
+  /**
+   * Clear streaming display
+   */
+  function clearStreamingDisplay() {
+    const streamingContainer = document.getElementById('streamingOutputContainer');
+    const reasoningSection = document.getElementById('streamingReasoningSection');
+    const responseSection = document.getElementById('streamingResponseSection');
+    const reasoningContent = document.getElementById('streamingReasoningContent');
+    const responseContent = document.getElementById('streamingResponseContent');
+
+    // Hide all streaming elements
+    if (streamingContainer) streamingContainer.classList.add('d-none');
+    if (reasoningSection) reasoningSection.classList.add('d-none');
+    if (responseSection) responseSection.classList.add('d-none');
+
+    // Clear content
+    if (reasoningContent) {
+      reasoningContent.textContent = '';
+      reasoningContent.classList.remove('stream-complete');
+    }
+    if (responseContent) {
+      responseContent.textContent = '';
+      responseContent.classList.remove('stream-complete');
     }
   }
 

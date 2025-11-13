@@ -222,6 +222,100 @@
   }
 
   /**
+   * Parse Server-Sent Events (SSE) stream from Together.ai API
+   * @param {ReadableStream} stream - Response body stream
+   * @param {Function} onChunk - Callback for each content chunk (text, isReasoning)
+   * @returns {Promise<string>} - Complete accumulated content
+   */
+  async function parseSSEStream(stream, onChunk = null) {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let accumulatedContent = '';
+    let accumulatedReasoning = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          console.log('[LLM Stream] Stream completed');
+          break;
+        }
+
+        // Decode chunk and add to buffer
+        buffer += decoder.decode(value, { stream: true });
+
+        // Split buffer by newlines to process complete lines
+        const lines = buffer.split('\n');
+
+        // Keep incomplete line in buffer
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+
+          // Skip empty lines
+          if (!trimmedLine) continue;
+
+          // Check for data: prefix (SSE format)
+          if (trimmedLine.startsWith('data: ')) {
+            const data = trimmedLine.substring(6);
+
+            // Check for stream termination
+            if (data === '[DONE]') {
+              console.log('[LLM Stream] Received [DONE] signal');
+              break;
+            }
+
+            try {
+              const chunk = JSON.parse(data);
+              const delta = chunk.choices?.[0]?.delta;
+
+              if (!delta) continue;
+
+              // Handle reasoning content (for models like DeepSeek-R1)
+              if (delta.reasoning) {
+                accumulatedReasoning += delta.reasoning;
+                if (onChunk) {
+                  onChunk(delta.reasoning, true); // true = isReasoning
+                }
+              }
+
+              // Handle regular content
+              if (delta.content) {
+                accumulatedContent += delta.content;
+                if (onChunk) {
+                  onChunk(delta.content, false); // false = regular content
+                }
+              }
+
+              // Check for completion
+              const finishReason = chunk.choices?.[0]?.finish_reason;
+              if (finishReason === 'stop' || finishReason === 'length') {
+                console.log(`[LLM Stream] Stream finished: ${finishReason}`);
+                break;
+              }
+
+            } catch (parseError) {
+              console.warn('[LLM Stream] Failed to parse chunk:', parseError, 'Data:', data);
+              // Continue processing other chunks
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[LLM Stream] Stream reading error:', error);
+      throw error;
+    } finally {
+      reader.releaseLock();
+    }
+
+    // Return the complete content (reasoning is typically not used for final output)
+    return accumulatedContent || accumulatedReasoning;
+  }
+
+  /**
    * Call Together AI API to evaluate DMP
    * @param {string} systemPrompt - System prompt describing the evaluator role
    * @param {string} userPrompt - User prompt with criteria and DMP text
@@ -233,7 +327,7 @@
     if (isTestMode()) {
       console.log('[LLM] Test mode enabled, returning sample data');
       if (onProgress) {
-        onProgress('Using test mode - sample evaluation data');
+        onProgress({ type: 'status', content: 'Using test mode - sample evaluation data' });
       }
       await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate delay
       return TEST_EVALUATION_DATA;
@@ -250,7 +344,7 @@
     console.log(`[LLM] Prompt size: ~${estimateTokens(systemPrompt + userPrompt)} tokens`);
 
     if (onProgress) {
-      onProgress(`Calling ${model}...`);
+      onProgress({ type: 'status', content: `Calling ${model}...` });
     }
 
     // Get active API profile
@@ -286,24 +380,59 @@
       throw new Error(`API Error ${response.status}: ${errorData.error?.message || 'Unknown error'}`);
     }
 
-    const data = await response.json();
+    // Check if response is streaming
+    const contentType = response.headers.get('content-type');
+    const isStreaming = contentType && contentType.includes('text/event-stream');
 
-    if (onProgress) {
-      onProgress('Parsing response...');
+    let content;
+
+    if (isStreaming) {
+      console.log('[LLM] Streaming response detected');
+
+      // Handle streaming response
+      content = await parseSSEStream(response.body, (chunk, isReasoning) => {
+        if (onProgress) {
+          // Pass streaming chunks to progress callback
+          // Format: {type: 'stream', content: string, isReasoning: boolean}
+          onProgress({
+            type: 'stream',
+            content: chunk,
+            isReasoning: isReasoning
+          });
+        }
+      });
+
+      if (onProgress) {
+        onProgress({ type: 'status', content: 'Processing complete response...' });
+      }
+
+    } else {
+      // Handle standard JSON response (fallback)
+      console.log('[LLM] Standard JSON response');
+      const data = await response.json();
+
+      if (onProgress) {
+        onProgress({ type: 'status', content: 'Parsing response...' });
+      }
+
+      // Extract content from response
+      content = data.choices[0]?.message?.content;
     }
 
-    // Extract and parse the response
-    const content = data.choices[0]?.message?.content;
     if (!content) {
       throw new Error('No content in API response');
     }
 
-    console.log('[LLM] Response received, parsing...');
+    console.log('[LLM] Response received, parsing JSON...');
 
     // Try to parse JSON response
     const result = repairJSON(content);
     if (!result) {
       throw new Error('Failed to parse evaluation results as JSON');
+    }
+
+    if (onProgress) {
+      onProgress({ type: 'complete', content: 'Evaluation complete!' });
     }
 
     return result;
@@ -381,7 +510,7 @@ ${dmpText}
 
     console.log('[LLM] Detecting criteria suitability...');
     if (onProgress) {
-      onProgress('Analyzing evaluation criteria...');
+      onProgress({ type: 'status', content: 'Analyzing evaluation criteria...' });
     }
 
     // Check if already in evaluation format (heuristic check)
@@ -414,7 +543,7 @@ ${dmpText}
     // Use AI to convert
     console.log('[LLM] Converting criteria using AI...');
     if (onProgress) {
-      onProgress('Converting criteria to evaluation format...');
+      onProgress({ type: 'status', content: 'Converting criteria to evaluation format...' });
     }
 
     try {

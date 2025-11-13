@@ -56,7 +56,11 @@
       const results = await window.LLMService.evaluateDMP(
         prompts.systemPrompt,
         prompts.userPrompt,
-        (msg) => updateProgress(onProgress, `AI: ${msg}`)
+        (msg) => {
+          // Pass messages through directly
+          // LLM service now sends consistent object format
+          updateProgress(onProgress, msg);
+        }
       );
 
       // Step 5: Process and validate results
