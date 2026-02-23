@@ -357,13 +357,17 @@
   /**
    * Update progress callback
    * @param {Function} callback - Progress callback
-   * @param {string} message - Progress message
+   * @param {string|Object} message - Progress message or streaming object
    */
   function updateProgress(callback, message) {
     if (callback && typeof callback === 'function') {
       callback(message);
     }
-    console.log('[Progress]', message);
+    // Only log non-streaming messages to avoid console spam
+    // Stream messages are objects with type: 'stream'
+    if (typeof message === 'string' || (message && message.type !== 'stream')) {
+      console.log('[Progress]', message);
+    }
   }
 
   /**
