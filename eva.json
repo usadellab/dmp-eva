@@ -1,0 +1,166 @@
+{
+  "data_management_plan": [
+    {
+      "section_id": "1",
+      "section_title": "DATA DESCRIPTION AND COLLECTION OR RE-USE OF EXISTING DATA",
+      "subsections": [
+        {
+          "id": "1a",
+          "question": "How will new data be collected or produced, and/or how will existing data be re-used?",
+          "stages": {
+            "proposal_early_stage": "For new data collection or production: Describe the data in terms of scientific context and technical perspective Specify the methods, tools, instruments, and software to be used for data collection Justify collecting or producing new data (see Section 1b) For reuse of existing data: Describe the reused data (type, scope, and relevance) Explain the purpose of reusing the data (e.g., validation, comparison, integration) Mention sources, access conditions, and permissions (e.g., database name, DOI, publication, software, licensing, embargoes, access restrictions)",
+            "mid_project": "Confirm which data have been produced or reused so far Update formats and tools used, noting any changes Include information on data provenance Update documentation to show growth and technical advances as data is generated",
+            "end_project": "List final data sets, types, and formats collected or reused Provide justification for deviations from the original plan"
+          }
+        },
+        {
+          "id": "1b",
+          "question": "What data (for example the kind, formats, and volumes) will be collected or produced?",
+          "stages": {
+            "proposal_early_stage": "List expected data types, formats (e.g., open vs. proprietary), and estimated volume (size/number of files) If proprietary or less-common formats are used, provide justification including any limitations for reuse or access If the project will not produce new data, clearly state this with an explanation (see Section 1a)",
+            "mid_project": "Describe and monitor RDM pipelines and data analysis workflows Provide technical updates on actual volume, types, and formats produced, noting any technical constraints encountered Describe data conversion strategies if data will be transformed between formats (e.g., raw to processed formats, proprietary to open)",
+            "end_project": "Archive the final complete set of technical documentation and metadata files Report on how the final data's technical fidelity can be ensured for reuse"
+          }
+        }
+      ]
+    },
+    {
+      "section_id": "2",
+      "section_title": "DOCUMENTATION AND DATA QUALITY",
+      "subsections": [
+        {
+          "id": "2a",
+          "question": "What metadata and documentation will accompany the data? Are method- or discipline specific standards being used?",
+          "stages": {
+            "proposal_early_stage": "Describe the types of metadata to be provided, including both descriptive metadata (e.g., title, creator, keywords, project information) and process-related metadata (e.g., experimental or simulation conditions, instrumentation settings, sampling methods, software versions) List suitable candidates for community metadata standards Confirm chosen metadata standards align with community best practices and are suitable for the data type and discipline Mention tools or platforms used for creating and managing metadata (e.g., ELNs, lab management systems, automated metadata capture tools) Specify the format(s) in which metadata will be stored or shared (e.g., JSON-LD, XML, CSV, RDF)",
+            "mid_project": "Report which metadata standards or tools are being used Describe ongoing quality assurance and quality control (QA/QC) procedures Explain the rationale for selecting specific metadata standards If applicable, describe data models or metadata schemas that the project has developed or adopted, including justification for why existing ontologies or vocabularies are not sufficient Describe how the metadata are stored and shared",
+            "end_project": "Provide evidence of complete documentation (e.g., metadata files, ELN snapshots) Summarize QA outcomes Describe how metadata will be maintained after the end of the project"
+          }
+        },
+        {
+          "id": "2b",
+          "question": "What data quality control measures will be used?",
+          "stages": {
+            "proposal_early_stage": "Describe the approach to ensuring data quality, including verification and validation procedures Describe measures to track changes and manage versions of data and metadata Outline quality control steps during data collection and processing (e.g., consistency checks, use of standard procedures, comparison with reference or benchmark data, comparison with control samples) If applicable, indicate whether the data collection was reviewed by an ethics committee (see Section 4c)",
+            "mid_project": "Report on which measures were taken to ensure data quality",
+            "end_project": "Report on the quality control measures taken Combine quality control with other criteria, such as ethical, legal, and preservation requirements"
+          }
+        }
+      ]
+    },
+    {
+      "section_id": "3",
+      "section_title": "STORAGE AND BACKUP DURING THE RESEARCH PROCESS",
+      "subsections": [
+        {
+          "id": "3a",
+          "question": "How will data and metadata be stored and backed up during the research?",
+          "stages": {
+            "proposal_early_stage": "Provide a storage concept describing where data and metadata will reside during the project (institutional servers, repositories, cloud) Explain backup or versioning procedures, including methods, frequency, and responsibility Note whether institutional IT or RDM services provide storage or backup support If personal data is involved, include a clear statement that all storage locations comply with institutional security standards and GDPR requirements.",
+            "mid_project": "Report where data and metadata are actually stored, and whether this deviates from the initial plan Document active backup or versioning procedures Describe the organizational structure for data and associated documentation Confirm that backups, versioning, and storage security have been tested.",
+            "end_project": "List the final storage and backup arrangements for all project data and metadata Describe how final datasets are transferred to long-term preservation systems that meet recognised security and integrity standards."
+          }
+        },
+        {
+          "id": "3b",
+          "question": "Who needs access to the data? Are there legal aspects that have to be considered?",
+          "stages": {
+            "proposal_early_stage": "Clarify user roles (e.g., PhD students, collaborators, data stewards) and access levels. Identify any personal or sensitive data and justify why certain users require access. Outline how access will be granted and documented.",
+            "mid_project": "Update the access rights reflecting staff or collaboration changes. Specify intended levels of access (e.g., read-only, edit, administrative). Note how access monitoring or audit logs are maintained.",
+            "end_project": "Specify how access will be discontinued and how external access requests will be handled after completion."
+          }
+        }
+      ]
+    },
+    {
+      "section_id": "4",
+      "section_title": "LEGAL AND ETHICAL REQUIREMENTS, CODES OF CONDUCT",
+      "subsections": [
+        {
+          "id": "4a",
+          "question": "If personal data are processed, how will compliance with legislation be ensured?",
+          "stages": {
+            "proposal_early_stage": "Describe the legal basis for processing under GDPR Article 6/9. Confirm roles of data controller(s) and processor(s). State whether a DPIA is required. Discuss potential data transfers outside the EU. Describe plans for pseudonymization and/or anonymization.",
+            "mid_project": "Confirm records of processing activities (ROPA) are updated. Confirm legal basis and informed consent. Confirm completion of DPIA if required. Describe implemented technical and organizational measures (TOMs).",
+            "end_project": "Confirm all data protection measures were implemented. Describe how personal data has been deleted, anonymized, or retained. Confirm published outputs are anonymized."
+          }
+        },
+        {
+          "id": "4b",
+          "question": "How will other legal issues, such as intellectual property rights and ownership, be managed?",
+          "stages": {
+            "proposal_early_stage": "Identify elements involving legal issues. Identify anticipated data outputs subject to IPR. Clarify third-party licensing. Describe who will own the data and results. Summarize relevant legal frameworks.",
+            "mid_project": "Confirm licensing decisions and compatibility. Formalize IP or data ownership clauses in signed agreements. Describe internal and partner access management.",
+            "end_project": "Confirm final ownership status and post-project access/reuse conditions. List registered IP (software licenses, patents) resulting from the project."
+          }
+        },
+        {
+          "id": "4c",
+          "question": "How will ethical issues be handled and are there any codes of conduct?",
+          "stages": {
+            "proposal_early_stage": "Check if ethical issues are a major concern. Describe need for ethics approval. Describe considerations for recruitment and participant safeguards. List existing relevant codes of conduct.",
+            "mid_project": "Confirm ethics approval has been obtained. Summarize any changes to ethical considerations or study populations.",
+            "end_project": "Confirm ethical issues have been fulfilled and documented. Confirm published materials comply with ethics approvals. Describe end-of-study obligations like debriefing."
+          }
+        }
+      ]
+    },
+    {
+      "section_id": "5",
+      "section_title": "DATA SHARING AND LONG-TERM PRESERVATION",
+      "subsections": [
+        {
+          "id": "5a",
+          "question": "How and when will data be shared? Are there possible restrictions?",
+          "stages": {
+            "proposal_early_stage": "Provide a clear plan for data sharing (what, where, and when). If data cannot be shared, provide a plan for sharing metadata or explain the 10-year storage plan.",
+            "mid_project": "Identify actual repositories used. Note updates to sharing timelines. Ensure regular internal sharing of metadata.",
+            "end_project": "Specify the license for reuse (e.g., CC BY, CC0). Explain valid restrictions or embargo periods. Clearly state access conditions for sensitive data."
+          }
+        },
+        {
+          "id": "5b",
+          "question": "How will data for preservation be selected and where will it be archived?",
+          "stages": {
+            "proposal_early_stage": "Describe criteria for selecting data for long-term preservation. Name potential repositories. State planned retention period (10+ years).",
+            "mid_project": "Identify actual datasets planned for storage. Report updates on selection criteria. Confirm chosen archiving solution.",
+            "end_project": "Confirm datasets have been deposited in the repository with appropriate metadata, licenses, and PIDs."
+          }
+        },
+        {
+          "id": "5c",
+          "question": "What methods or software tools are needed to access and use data?",
+          "stages": {
+            "proposal_early_stage": "List planned file formats and tools (preferring open, non-proprietary options).",
+            "mid_project": "Update tools or software required. Prioritize open-source alternatives. Update file formats.",
+            "end_project": "Confirm file formats used for preservation. Describe access mechanisms (GUI, API, download). Include or link source code or workflows needed to interpret the data."
+          }
+        }
+      ]
+    },
+    {
+      "section_id": "6",
+      "section_title": "DATA MANAGEMENT RESPONSIBILITIES AND RESOURCES",
+      "subsections": [
+        {
+          "id": "6a",
+          "question": "Who will be responsible for data management?",
+          "stages": {
+            "proposal_early_stage": "List roles and responsibilities (PI, researchers, data steward, IT staff). Assign tasks for storage, metadata, backup, and preservation. Address post-project data management responsibility.",
+            "mid_project": "Confirm actual roles and effort. Identify bottlenecks and adjust. Ensure onboarding procedures for team members.",
+            "end_project": "Finalize and document the complete list of contributors. Reflect on the adequacy of assigned resources."
+          }
+        },
+        {
+          "id": "6b",
+          "question": "What resources will be dedicated to data management and FAIR principles?",
+          "stages": {
+            "proposal_early_stage": "Provide estimates of human, financial, and technical resources. Identify planned external or institutional support.",
+            "mid_project": "Review actual resource allocation. Monitor workload against estimates. Assess sufficiency of storage and training.",
+            "end_project": "Summarize total resources spent. Evaluate cost-efficiency and adequacy of FAIR implementation. Provide a final report on support contributions."
+          }
+        }
+      ]
+    }
+  ]
+}

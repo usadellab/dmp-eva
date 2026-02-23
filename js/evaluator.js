@@ -65,7 +65,7 @@
 
       // Step 5: Process and validate results
       updateProgress(onProgress, 'Processing results...');
-      const processedResults = processResults(results, criteria);
+      const processedResults = processResults(results, criteria, dmpData.text);
 
       console.log('[Evaluator] Evaluation complete. Overall score:', processedResults.overallScore);
       updateProgress(onProgress, 'Evaluation complete!');
@@ -101,53 +101,79 @@
    * Process and validate evaluation results
    * @param {Object} rawResults - Raw results from LLM
    * @param {Object} criteria - Original criteria
+   * @param {string} originalDMPText - Original DMP text (optional)
    * @returns {Object} - Processed results
    */
-  function processResults(rawResults, criteria) {
+  function processResults(rawResults, criteria, originalDMPText = '') {
+    // Detect and expand compact format
+    const expandedResults = expandCompactFormat(rawResults);
+
     // Ensure all required fields exist
     const processed = {
-      overallScore: rawResults.overallScore || 0,
-      categories: []
+      overallScore: 0,
+      categories: [],
+      sentenceEvaluations: [],
+      originalDMPText: originalDMPText
     };
 
-    // Process each category
-    if (rawResults.categories && Array.isArray(rawResults.categories)) {
-      processed.categories = rawResults.categories.map(cat => {
-        // Determine status based on score if not provided
-        let status = cat.status || determineStatus(cat.score || 0);
+    // Process sentence evaluations
+    if (expandedResults.sentenceEvaluations && Array.isArray(expandedResults.sentenceEvaluations)) {
+      processed.sentenceEvaluations = expandedResults.sentenceEvaluations.map(se => ({
+        sentence: se.sentence || '',
+        criteriaIds: se.criteriaIds || [],
+        score: Math.min(100, Math.max(0, se.score || 0)),
+        explanation: se.explanation || 'No explanation provided',
+        suggestion: se.suggestion || null
+      }));
+    }
+
+    // Calculate category scores from sentence evaluations
+    const categoryScores = {};
+    const categoryExplanations = {};
+    processed.sentenceEvaluations.forEach(se => {
+      se.criteriaIds.forEach(cid => {
+        if (!categoryScores[cid]) {
+          categoryScores[cid] = [];
+          categoryExplanations[cid] = [];
+        }
+        categoryScores[cid].push(se.score);
+        if (se.explanation) {
+          categoryExplanations[cid].push(se.explanation);
+        }
+      });
+    });
+
+    // Build categories from criteria and sentence scores
+    if (criteria && criteria.categories) {
+      processed.categories = criteria.categories.map(critCat => {
+        const scores = categoryScores[critCat.id] || [];
+        const calculatedScore = scores.length > 0
+          ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+          : 0;
+
+        const status = determineStatus(calculatedScore);
+
+        // Generate feedback from sentence explanations
+        const feedback = generateCategoryFeedback(critCat.id, critCat.name, calculatedScore, categoryExplanations[critCat.id] || []);
 
         return {
-          id: cat.id || 'unknown',
-          name: cat.name || 'Unknown Category',
-          score: Math.min(100, Math.max(0, cat.score || 0)), // Clamp to 0-100
+          id: critCat.id,
+          name: critCat.name,
+          score: calculatedScore,
           status: status,
-          feedback: cat.feedback || 'No feedback provided'
+          feedback: feedback
         };
       });
     }
 
-    // Recalculate overall score if missing or invalid
-    if (!processed.overallScore || processed.overallScore === 0) {
-      if (processed.categories.length > 0) {
-        const sum = processed.categories.reduce((acc, cat) => acc + cat.score, 0);
-        processed.overallScore = Math.round(sum / processed.categories.length);
+    // Calculate overall score from category scores
+    if (processed.categories.length > 0) {
+      const validCategories = processed.categories.filter(c => c.score > 0);
+      if (validCategories.length > 0) {
+        const sum = validCategories.reduce((acc, cat) => acc + cat.score, 0);
+        processed.overallScore = Math.round(sum / validCategories.length);
       }
     }
-
-    // Fill in missing categories from criteria
-    const existingIds = new Set(processed.categories.map(c => c.id));
-    criteria.categories.forEach(critCat => {
-      if (!existingIds.has(critCat.id)) {
-        console.warn(`[Evaluator] Missing evaluation for category ${critCat.id}, adding placeholder`);
-        processed.categories.push({
-          id: critCat.id,
-          name: critCat.name,
-          score: 0,
-          status: 'poor',
-          feedback: 'This criterion was not evaluated. Please review the DMP for this section.'
-        });
-      }
-    });
 
     // Sort categories by ID
     processed.categories.sort((a, b) => {
@@ -161,6 +187,162 @@
   }
 
   /**
+   * Expand compact format to full format
+   * Handles multiple formats from different models:
+   * 1. Compact array format: {"s": [["sentence", ["1a"], 90, "explanation"]]}
+   * 2. Object format: {"s": [{"sentence": "...", "criteriaIds": ["1a"], "score": 90, ...}]}
+   * 3. Ministral format: [{"s": [["sentence", [1a]]], "score": 90, "explanation": "..."}]
+   * @param {Object|Array} compact - Compact format results
+   * @returns {Object} - Expanded results
+   */
+  function expandCompactFormat(compact) {
+    // Handle Ministral format: array at top level with nested s/score/explanation
+    if (Array.isArray(compact)) {
+      console.log('[Evaluator] Detected Ministral array format, normalizing...');
+      const sentenceEvaluations = [];
+
+      compact.forEach(item => {
+        if (item.s && Array.isArray(item.s)) {
+          item.s.forEach(sItem => {
+            // sItem can be ["sentence", [criteriaIds]] or ["sentence", criteriaId]
+            const sentence = Array.isArray(sItem) ? sItem[0] : sItem;
+            const criteriaIds = Array.isArray(sItem) && Array.isArray(sItem[1])
+              ? sItem[1].map(id => typeof id === 'string' ? id : String(id))
+              : (Array.isArray(sItem) && sItem[1] ? [String(sItem[1])] : []);
+
+            sentenceEvaluations.push({
+              sentence: sentence || '',
+              criteriaIds: criteriaIds,
+              score: typeof item.score === 'number' ? item.score : 0,
+              explanation: item.explanation || 'No explanation provided',
+              suggestion: item.suggestion || null
+            });
+          });
+        }
+      });
+
+      return {
+        sentenceEvaluations,
+        categories: [],
+        overallScore: 0
+      };
+    }
+
+    // Handle new compact format (s for sentences only)
+    if (compact.s && Array.isArray(compact.s)) {
+      console.log('[Evaluator] Detected compact format, expanding...');
+
+      // Check if first item is an object (object format from smaller models)
+      // or an array (compact format from larger models)
+      const firstItem = compact.s[0];
+      if (firstItem && typeof firstItem === 'object' && !Array.isArray(firstItem)) {
+        // Object format - already has named properties
+        console.log('[Evaluator] Detected object format (from smaller model), normalizing...');
+        return {
+          sentenceEvaluations: compact.s.map(item => {
+            // Normalize criteriaIds to array (handle single string like "1a" -> ["1a"])
+            let criteriaIds = item.criteriaIds;
+            if (typeof criteriaIds === 'string') {
+              criteriaIds = [criteriaIds];
+            } else if (!Array.isArray(criteriaIds)) {
+              criteriaIds = [];
+            }
+            return {
+              sentence: item.sentence || '',
+              criteriaIds: criteriaIds,
+              score: typeof item.score === 'number' ? item.score : 0,
+              explanation: item.explanation || 'No explanation provided',
+              suggestion: item.suggestion || null
+            };
+          }),
+          categories: compact.c ? compact.c.map(item => ({
+            id: item[0],
+            name: item[1],
+            score: item[2],
+            status: expandStatus(item[3]),
+            feedback: item[4],
+            suggestion: item[5] || null
+          })) : [],
+          overallScore: 0
+        };
+      }
+
+      // Compact array format
+      return {
+        sentenceEvaluations: compact.s.map(item => {
+          // Normalize criteriaIds to array (handle single string like "1a" -> ["1a"])
+          let criteriaIds = item[1];
+          if (typeof criteriaIds === 'string') {
+            criteriaIds = [criteriaIds];
+          } else if (!Array.isArray(criteriaIds)) {
+            criteriaIds = [];
+          }
+          return {
+            sentence: item[0],
+            criteriaIds: criteriaIds,
+            score: item[2],
+            explanation: item[3],
+            suggestion: item[4] || null
+          };
+        }),
+        categories: compact.c ? compact.c.map(item => ({
+          id: item[0],
+          name: item[1],
+          score: item[2],
+          status: expandStatus(item[3]),
+          feedback: item[4],
+          suggestion: item[5] || null
+        })) : [],
+        overallScore: 0
+      };
+    }
+    // Fallback to original format (backward compatibility)
+    return compact;
+  }
+
+  /**
+   * Expand status code to full status name
+   * @param {string} code - Status code (e/g/p/i)
+   * @returns {string} - Full status name
+   */
+  function expandStatus(code) {
+    const map = {
+      'e': 'excellent',
+      'g': 'good',
+      'p': 'pass',
+      'i': 'insufficient'
+    };
+    return map[code] || code;
+  }
+
+  /**
+   * Generate category feedback from sentence explanations
+   * @param {string} categoryId - Category ID
+   * @param {string} categoryName - Category name
+   * @param {number} score - Calculated score
+   * @param {Array<string>} explanations - Array of sentence explanations
+   * @returns {string} - Generated feedback
+   */
+  function generateCategoryFeedback(categoryId, categoryName, score, explanations) {
+    if (explanations.length === 0) {
+      return 'No relevant content found in DMP for this criterion.';
+    }
+
+    // Combine unique explanations (avoid repetition)
+    const uniqueExplanations = [...new Set(explanations)].slice(0, 3);
+
+    if (score >= 90) {
+      return `Excellent coverage of ${categoryName.toLowerCase()}. ${uniqueExplanations.join(' ')}`;
+    } else if (score >= 75) {
+      return `Good coverage of ${categoryName.toLowerCase()}. ${uniqueExplanations.join(' ')}`;
+    } else if (score >= 60) {
+      return `Adequate coverage of ${categoryName.toLowerCase()}, but could be improved. ${uniqueExplanations.join(' ')}`;
+    } else {
+      return `Insufficient coverage of ${categoryName.toLowerCase()}. ${uniqueExplanations.join(' ')}`;
+    }
+  }
+
+  /**
    * Determine status label based on score
    * @param {number} score - Score (0-100)
    * @returns {string} - Status label
@@ -168,8 +350,8 @@
   function determineStatus(score) {
     if (score >= 90) return 'excellent';
     if (score >= 75) return 'good';
-    if (score >= 60) return 'fair';
-    return 'poor';
+    if (score >= 60) return 'pass';
+    return 'insufficient';
   }
 
   /**
@@ -192,21 +374,21 @@
   function getScoreColorClass(score) {
     if (score >= 90) return 'score-excellent';
     if (score >= 75) return 'score-good';
-    if (score >= 60) return 'score-fair';
-    return 'score-poor';
+    if (score >= 60) return 'score-pass';
+    return 'score-insufficient';
   }
 
   /**
    * Get score status badge class
-   * @param {string} status - Status (excellent/good/fair/poor)
+   * @param {string} status - Status (excellent/good/pass/insufficient)
    * @returns {string} - CSS class name
    */
   function getStatusBadgeClass(status) {
     const map = {
       'excellent': 'bg-success',
       'good': 'bg-info',
-      'fair': 'bg-warning',
-      'poor': 'bg-danger'
+      'pass': 'bg-warning',
+      'insufficient': 'bg-danger'
     };
     return map[status] || 'bg-secondary';
   }
@@ -239,8 +421,8 @@
     const statusCounts = {
       excellent: categories.filter(c => c.status === 'excellent').length,
       good: categories.filter(c => c.status === 'good').length,
-      fair: categories.filter(c => c.status === 'fair').length,
-      poor: categories.filter(c => c.status === 'poor').length
+      pass: categories.filter(c => c.status === 'pass').length,
+      insufficient: categories.filter(c => c.status === 'insufficient').length
     };
 
     return {

@@ -7,10 +7,54 @@
   'use strict';
 
   // =============================================================================
+  // URL OBFUSCATION UTILITIES
+  // Simple base64 encoding to hide URL from casual inspection
+  // =============================================================================
+
+  /**
+   * Obfuscate a URL using base64 encoding
+   * @param {string} url - URL to obfuscate
+   * @returns {string} - Base64 encoded string
+   */
+  function obfuscateURL(url) {
+    return btoa(url);
+  }
+
+  /**
+   * Deobfuscate a URL from base64 encoding
+   * @param {string} encoded - Base64 encoded string
+   * @returns {string} - Original URL or input if not valid base64
+   */
+  function deobfuscateURL(encoded) {
+    try {
+      return atob(encoded);
+    } catch {
+      return encoded; // Return as-is if not valid base64
+    }
+  }
+
+  // =============================================================================
   // DEFAULT PROFILES
   // =============================================================================
 
   const DEFAULT_PROFILES = {
+    dataplan: {
+      name: 'DataPLANT',
+      endpoint: 'aHR0cHM6Ly9oLmRhdGFwbGFuLnRvcC92MS9jaGF0L2NvbXBsZXRpb25z',
+      requiresAPIKey: false,
+      authHeaderTemplate: '',
+      additionalHeaders: {
+        'Content-Type': 'application/json',
+        'Host': 'h.dataplan.top',
+        'institution': 'IBG-4'
+      },
+      modelParamName: 'model',
+      messagesParamName: 'messages',
+      temperature: 0.3,
+      maxTokens: 8000,
+      responseFormat: 'json_object',
+      streamEnabled: true
+    },
     together: {
       name: 'Together.ai (Default)',
       endpoint: 'https://api.together.xyz/v1/chat/completions',
@@ -38,6 +82,21 @@
       maxTokens: 8000,
       responseFormat: 'json_object',
       streamEnabled: true
+    },
+    lmstudio: {
+      name: 'LM Studio (Local)',
+      endpoint: 'http://localhost:1234/v1/chat/completions',
+      requiresAPIKey: false,
+      authHeaderTemplate: '',
+      additionalHeaders: {
+        'Content-Type': 'application/json'
+      },
+      modelParamName: 'model',
+      messagesParamName: 'messages',
+      temperature: 0.3,
+      maxTokens: 8000,
+      responseFormat: null,  // LM Studio doesn't support response_format
+      streamEnabled: true
     }
   };
 
@@ -59,7 +118,7 @@
    * @returns {string} - Profile ID (together, openai, or custom profile name)
    */
   function getActiveProfileId() {
-    return localStorage.getItem(STORAGE_KEYS.ACTIVE_PROFILE) || 'together';
+    return localStorage.getItem(STORAGE_KEYS.ACTIVE_PROFILE) || 'dataplan';
   }
 
   /**
@@ -116,7 +175,7 @@
     const profile = getProfile(profileId);
 
     // Fallback to default if profile not found
-    return profile || { ...DEFAULT_PROFILES.together };
+    return profile || { ...DEFAULT_PROFILES.dataplan };
   }
 
   /**
@@ -157,7 +216,7 @@
 
       // If deleted profile was active, switch to default
       if (getActiveProfileId() === profileId) {
-        setActiveProfileId('together');
+        setActiveProfileId('dataplan');
       }
 
       return true;
@@ -197,21 +256,20 @@
    * @returns {Object} - Fetch configuration (url, options)
    */
   function generateFetchConfig(profile, apiKey, model, messages) {
-    // Replace API key placeholder in auth header
-    const authHeader = profile.authHeaderTemplate.replace('{API_KEY}', apiKey);
+    // Deobfuscate endpoint if needed
+    const endpoint = deobfuscateURL(profile.endpoint);
 
-    // Build headers
-    const headers = {
-      'Authorization': authHeader,
-      ...profile.additionalHeaders
-    };
+    // Build headers - only add auth if profile requires it
+    const headers = { ...profile.additionalHeaders };
+    if (profile.requiresAPIKey !== false && apiKey) {
+      const authHeader = profile.authHeaderTemplate.replace('{API_KEY}', apiKey);
+      headers['Authorization'] = authHeader;
+    }
 
     // Build request body
     const body = {
       [profile.modelParamName]: model,
-      [profile.messagesParamName]: messages,
-      temperature: profile.temperature,
-      max_tokens: profile.maxTokens
+      [profile.messagesParamName]: messages
     };
 
     // Add response format if specified
@@ -225,7 +283,7 @@
     }
 
     return {
-      url: profile.endpoint,
+      url: endpoint,
       options: {
         method: 'POST',
         headers: headers,
@@ -240,21 +298,22 @@
    * @returns {string} - Formatted JavaScript code string
    */
   function generateFetchPreview(profile) {
-    const authHeader = profile.authHeaderTemplate.replace('{API_KEY}', 'YOUR_API_KEY');
+    // Deobfuscate endpoint for preview display
+    const endpoint = deobfuscateURL(profile.endpoint);
 
-    const headers = {
-      'Authorization': authHeader,
-      ...profile.additionalHeaders
-    };
+    // Build headers - only add auth if profile requires it
+    const headers = { ...profile.additionalHeaders };
+    if (profile.requiresAPIKey !== false) {
+      const authHeader = profile.authHeaderTemplate.replace('{API_KEY}', 'YOUR_API_KEY');
+      headers['Authorization'] = authHeader;
+    }
 
     const body = {
       [profile.modelParamName]: 'SELECTED_MODEL',
       [profile.messagesParamName]: [
         { role: 'system', content: 'SYSTEM_PROMPT' },
         { role: 'user', content: 'USER_PROMPT' }
-      ],
-      temperature: profile.temperature,
-      max_tokens: profile.maxTokens
+      ]
     };
 
     if (profile.responseFormat === 'json_object') {
@@ -265,7 +324,7 @@
       body.stream = true;
     }
 
-    const code = `fetch('${profile.endpoint}', {
+    const code = `fetch('${endpoint}', {
   method: 'POST',
   headers: ${JSON.stringify(headers, null, 4).replace(/\n/g, '\n  ')},
   body: JSON.stringify(${JSON.stringify(body, null, 4).replace(/\n/g, '\n    ')})
@@ -292,6 +351,10 @@
     // Fetch configuration
     generateFetchConfig,
     generateFetchPreview,
+
+    // URL utilities
+    obfuscateURL,
+    deobfuscateURL,
 
     // Constants
     DEFAULT_PROFILES

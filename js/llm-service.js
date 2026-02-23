@@ -6,7 +6,80 @@
 (function(window) {
   'use strict';
 
-  const DEFAULT_MODEL = 'Qwen/Qwen3-235B-A22B-Instruct-2507-tput';
+  const DEFAULT_MODEL = 'Qwen/Qwen3-235B-A22B-Instruct';
+
+  // Default prompt sections for DMP evaluation
+  const DEFAULT_PROMPT = {
+    systemRole: `DMP evaluator for {phase} phase.
+
+Score: 90-100=e (excellent), 75-89=g (good), 60-74=p (pass), 0-59=i (insufficient).
+
+Return compact JSON:
+{"s":[[sentence,[criteriaIds],score,explanation,suggestion?]]}
+
+Rules:
+1. Evaluate each meaningful DMP sentence
+2. criteriaIds: relevant IDs (1a,1b,2a,etc)
+3. Add suggestion only if score<75`,
+
+    criteriaContext: `Criteria:
+{criteriaText}`,
+
+    dmpContext: `DMP:
+{dmpText}
+
+Evaluate. Return compact JSON.`
+  };
+
+  /**
+   * Load custom prompt from localStorage
+   * @returns {Object} - Prompt sections object
+   */
+  function loadPromptFromStorage() {
+    const saved = localStorage.getItem('dmpCustomPrompt');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return { ...DEFAULT_PROMPT };
+      }
+    }
+    return { ...DEFAULT_PROMPT };
+  }
+
+  /**
+   * Save custom prompt to localStorage
+   * @param {Object} promptSections - Prompt sections to save
+   */
+  function savePromptToStorage(promptSections) {
+    localStorage.setItem('dmpCustomPrompt', JSON.stringify(promptSections));
+  }
+
+  /**
+   * Get default prompt template
+   * @returns {Object} - Default prompt sections
+   */
+  function getDefaultPrompt() {
+    return { ...DEFAULT_PROMPT };
+  }
+
+  /**
+   * Assemble full prompt from sections
+   * @param {Object} sections - Prompt sections
+   * @param {string} criteriaText - Formatted criteria text
+   * @param {string} dmpText - DMP document text
+   * @param {string} phase - Project phase
+   * @returns {Object} - {systemPrompt, userPrompt}
+   */
+  function assembleFullPrompt(sections, criteriaText, dmpText, phase) {
+    const phaseName = phase === 'proposal' ? 'proposal/early' : phase === 'mid' ? 'mid-project' : 'end-project';
+
+    return {
+      systemPrompt: sections.systemRole.replace('{phase}', phaseName),
+      userPrompt: sections.criteriaContext.replace('{criteriaText}', criteriaText) + '\n\n' +
+                  sections.dmpContext.replace('{dmpText}', dmpText)
+    };
+  }
 
   /**
    * Get the currently selected LLM model from localStorage
@@ -33,95 +106,22 @@
   }
 
   /**
-   * Test data for DMP evaluation (bypasses API calls)
+   * Test data for DMP evaluation (compact format) - Updated for sentence-level evaluation
    */
   const TEST_EVALUATION_DATA = {
-    overallScore: 75,
-    categories: [
-      {
-        id: '1a',
-        name: 'Data Description and Collection',
-        score: 80,
-        status: 'good',
-        feedback: 'The DMP provides good information about data types and formats. Genomic data is well-described with clear references to RNAseq and genetic analysis methods.'
-      },
-      {
-        id: '1b',
-        name: 'Data Updates',
-        score: 70,
-        status: 'fair',
-        feedback: 'Some information about data collection methods is present, but could be more detailed regarding specific instruments and protocols.'
-      },
-      {
-        id: '2a',
-        name: 'Documentation and Metadata',
-        score: 75,
-        status: 'good',
-        feedback: 'Metadata standards are mentioned with references to JSON-LD and community standards. Could benefit from more specific examples.'
-      },
-      {
-        id: '2b',
-        name: 'Data Quality',
-        score: 65,
-        status: 'fair',
-        feedback: 'Quality control measures are mentioned but lack detail. Consider adding specific QA/QC procedures and validation steps.'
-      },
-      {
-        id: '3a',
-        name: 'Storage Solutions',
-        score: 85,
-        status: 'good',
-        feedback: 'Storage solutions are well-defined with institutional repositories mentioned. Clear backup procedures outlined.'
-      },
-      {
-        id: '3b',
-        name: 'Data Security',
-        score: 70,
-        status: 'fair',
-        feedback: 'Basic security measures mentioned. Consider adding more details about encryption, access control, and GDPR compliance.'
-      },
-      {
-        id: '4a',
-        name: 'Legal and Ethical Requirements',
-        score: 60,
-        status: 'fair',
-        feedback: 'Ethical considerations are addressed but lack specific references to GDPR Articles or ethics approval numbers.'
-      },
-      {
-        id: '4b',
-        name: 'IPR and Ownership',
-        score: 75,
-        status: 'good',
-        feedback: 'Intellectual property rights are clearly stated with consortium agreements mentioned.'
-      },
-      {
-        id: '5a',
-        name: 'Data Sharing Plans',
-        score: 80,
-        status: 'good',
-        feedback: 'Data sharing plans are comprehensive with repository selection and embargo periods clearly defined.'
-      },
-      {
-        id: '5b',
-        name: 'Long-term Preservation',
-        score: 85,
-        status: 'excellent',
-        feedback: 'Excellent preservation strategy with DOI assignment and 10+ year retention period specified.'
-      },
-      {
-        id: '6a',
-        name: 'Roles and Responsibilities',
-        score: 70,
-        status: 'fair',
-        feedback: 'Key roles identified but could benefit from more specific assignment of data management tasks.'
-      },
-      {
-        id: '6b',
-        name: 'Resources',
-        score: 65,
-        status: 'fair',
-        feedback: 'Resource allocation mentioned but needs more detail on budget, personnel time, and infrastructure.'
-      }
+    s: [
+      ["This project will generate genomic data from RNA sequencing of alpine plant species.", ["1a"], 85, "Clearly describes data type and subject."],
+      ["We will collect new observational data on alpine plant species diversity through field surveys across 50 sites.", ["1a", "1b"], 90, "Excellent detail on methods and scope."],
+      ["Field observations will be stored in CSV format, approximately 10,000 records per year.", ["1b"], 80, "Good format specification."],
+      ["We will implement Ecological Metadata Language (EML) for biodiversity observations.", ["2a"], 85, "Appropriate metadata standard."],
+      ["Data stored on university secure file server with RAID-6 configuration.", ["3a"], 75, "Storage identified but needs more backup detail.", "Specify backup frequency and retention policy."],
+      ["Daily incremental backups and weekly full backups retained for one year.", ["3a"], 90, "Excellent backup strategy."],
+      ["No personal data processing involved - only plant species and environmental data.", ["4a"], 95, "Clear GDPR compliance statement."],
+      ["University owns data per institutional policy with collaborators retaining rights.", ["4b"], 80, "IP ownership stated."],
+      ["Public release planned within 12 months via GBIF and PANGAEA under CC BY 4.0.", ["5a", "5b"], 90, "Comprehensive sharing plan."],
+      ["10+ year preservation in GBIF and PANGAEA repositories with DOI assignment.", ["5b"], 95, "Excellent long-term preservation."],
+      ["PI responsible for strategy and compliance, Data Manager for daily management.", ["6a"], 85, "Clear role assignment."],
+      ["Data Manager allocated at 0.5 FTE with total budget of EUR 63,800 over 36 months.", ["6b"], 80, "Specific resource allocation."]
     ]
   };
 
@@ -176,6 +176,15 @@
         lastError = error;
         console.error(`[LLM] Network error on attempt ${attempt + 1}:`, error);
 
+        // Check for CORS error
+        if (error.message && error.message.includes('Failed to fetch')) {
+          const activeProfile = window.APIConfig.getActiveProfile();
+          if (activeProfile.endpoint && activeProfile.endpoint.includes('localhost:1234')) {
+            // This is likely a CORS error with LM Studio
+            throw new Error('CORS Error: LM Studio requires CORS to be enabled.\n\nIn LM Studio:\n1. Go to "Local Server" tab\n2. Enable "CORS" option\n3. Restart the server');
+          }
+        }
+
         if (attempt < maxRetries) {
           const delay = initialDelay * Math.pow(2, attempt);
           console.warn(`[LLM] Retrying in ${delay}ms...`);
@@ -205,6 +214,13 @@
 
       // Remove markdown code blocks if present
       repaired = repaired.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+
+      // Fix unquoted criteria IDs like [1a] -> ["1a"], [1a,2b] -> ["1a","2b"]
+      // Match patterns like [1a], [1a, 2b], [1a,2b,3c] etc.
+      repaired = repaired.replace(/\[([0-9][a-z](?:\s*,\s*[0-9][a-z])*)\]/g, (match, content) => {
+        const ids = content.split(',').map(id => `"${id.trim()}"`);
+        return `[${ids.join(',')}]`;
+      });
 
       // Fix trailing commas
       repaired = repaired.replace(/,(\s*[}\]])/g, '$1');
@@ -333,10 +349,17 @@
       return TEST_EVALUATION_DATA;
     }
 
-    // Validate API key
-    const apiKey = getAPIKey();
-    if (!apiKey) {
-      throw new Error('Together AI API key not configured. Please enter your API key.');
+    // Get active profile first to check if API key is needed
+    const activeProfile = window.APIConfig.getActiveProfile();
+    const needsAPIKey = activeProfile.requiresAPIKey !== false;
+
+    // Only validate API key if profile requires it
+    let apiKey = '';
+    if (needsAPIKey) {
+      apiKey = getAPIKey();
+      if (!apiKey) {
+        throw new Error('API key not configured. Please enter your API key.');
+      }
     }
 
     const model = getSelectedModel();
@@ -346,9 +369,6 @@
     if (onProgress) {
       onProgress({ type: 'status', content: `Calling ${model}...` });
     }
-
-    // Get active API profile
-    const activeProfile = window.APIConfig.getActiveProfile();
 
     // Build messages array
     const messages = [
@@ -440,61 +460,23 @@
 
   /**
    * Build evaluation prompt from criteria and DMP text
+   * Uses custom prompt from localStorage if available
    * @param {Object} criteria - Extracted evaluation criteria
    * @param {string} dmpText - DMP document text
    * @param {string} phase - Project phase (proposal/mid/end)
    * @returns {Object} - {systemPrompt, userPrompt}
    */
   function buildEvaluationPrompt(criteria, dmpText, phase) {
-    const systemPrompt = `You are an expert Data Management Plan (DMP) evaluator for ${phase === 'proposal' ? 'proposal/early stage' : phase === 'mid' ? 'mid-project' : 'end-project'} research projects.
+    // Load custom prompt from storage
+    const customPrompt = loadPromptFromStorage();
 
-Your task is to evaluate a DMP document against standardized criteria and provide:
-1. Quantitative scores (0-100) for each criterion
-2. Qualitative feedback highlighting strengths and areas for improvement
+    // Format criteria text
+    const criteriaText = criteria.categories.map(cat =>
+      `${cat.id}: ${cat.name}\n${cat.description}`
+    ).join('\n\n');
 
-Scoring guidance:
-- 90-100: Excellent - Fully addresses criterion with exemplary detail
-- 75-89: Good - Adequately addresses criterion with minor gaps
-- 60-74: Fair - Partially addresses criterion with notable gaps
-- 0-59: Poor - Does not adequately address criterion
-
-You must return your evaluation as a JSON object with this exact structure:
-{
-  "overallScore": <number 0-100>,
-  "categories": [
-    {
-      "id": "<criterion ID like 1a, 2b, etc>",
-      "name": "<criterion name>",
-      "score": <number 0-100>,
-      "status": "<excellent|good|fair|poor>",
-      "feedback": "<detailed feedback string>"
-    }
-  ]
-}`;
-
-    const criteriaText = criteria.categories.map(cat => {
-      return `**${cat.id}: ${cat.name}**\n${cat.description}`;
-    }).join('\n\n');
-
-    const userPrompt = `Please evaluate the following Data Management Plan for the ${phase} phase.
-
-## EVALUATION CRITERIA
-
-${criteriaText}
-
-## DMP DOCUMENT TO EVALUATE
-
-${dmpText}
-
-## INSTRUCTIONS
-
-1. Evaluate the DMP against each criterion listed above
-2. Assign a score (0-100) and status (excellent/good/fair/poor) for each criterion
-3. Provide specific, actionable feedback for each criterion
-4. Calculate an overall score as the average of all criteria scores
-5. Return the evaluation as a JSON object following the specified structure`;
-
-    return { systemPrompt, userPrompt };
+    // Assemble prompt using custom sections
+    return assembleFullPrompt(customPrompt, criteriaText, dmpText, phase);
   }
 
   /**
@@ -547,13 +529,20 @@ ${dmpText}
     }
 
     try {
-      const apiKey = getAPIKey();
-      if (!apiKey) {
-        throw new Error('API key required for criteria conversion');
+      // Get active profile first to check if API key is needed
+      const activeProfile = window.APIConfig.getActiveProfile();
+      const needsAPIKey = activeProfile.requiresAPIKey !== false;
+
+      // Only validate API key if profile requires it
+      let apiKey = '';
+      if (needsAPIKey) {
+        apiKey = getAPIKey();
+        if (!apiKey) {
+          throw new Error('API key required for criteria conversion');
+        }
       }
 
       const model = getSelectedModel();
-      const activeProfile = window.APIConfig.getActiveProfile();
 
       const systemPrompt = `You are an expert in Data Management Plan (DMP) evaluation. Your task is to convert any DMP-related document, guidelines, or requirements into a clear, structured set of evaluation criteria.
 
@@ -629,7 +618,11 @@ Create comprehensive evaluation criteria that cover all important aspects mentio
     getSelectedModel,
     getAPIKey,
     isTestMode,
-    estimateTokens
+    estimateTokens,
+    // Prompt editor functions
+    loadPromptFromStorage,
+    savePromptToStorage,
+    getDefaultPrompt
   };
 
 })(window);

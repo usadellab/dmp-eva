@@ -441,15 +441,21 @@ Post-project: University RDM Service
   };
 
   /**
-   * Extract criteria from markdown text
-   * @param {string} text - Markdown text containing Table 2
+   * Extract criteria from markdown text or JSON
+   * @param {string} text - Markdown text containing Table 2 or JSON from eva.json
    * @param {string} phase - Project phase: 'proposal', 'mid', or 'end'
    * @returns {Object} - Structured criteria object
    */
   function extractCriteria(text, phase = 'proposal') {
     console.log('[Criteria Extractor] Extracting criteria for phase:', phase);
 
-    // Find Table 2 section
+    // First, try to parse as JSON (eva.json format)
+    const jsonCriteria = parseJSONCriteria(text, phase);
+    if (jsonCriteria) {
+      return jsonCriteria;
+    }
+
+    // Find Table 2 section for markdown format
     const table2Start = text.indexOf('Table 2');
     if (table2Start === -1) {
       console.warn('[Criteria Extractor] Table 2 not found, using default criteria');
@@ -700,6 +706,80 @@ Post-project: University RDM Service
     return DEFAULT_CRITERIA_BY_PHASE[phase] || DEFAULT_CRITERIA_BY_PHASE.proposal;
   }
 
+  /**
+   * Load EVA criteria from JSON format (eva.json)
+   * @param {Object} evaData - Parsed eva.json data
+   * @param {string} phase - Project phase (proposal, mid, end)
+   * @returns {Object} - Structured criteria object with stage-specific requirements
+   */
+  function loadEVACriteria(evaData, phase = 'proposal') {
+    console.log('[Criteria Extractor] Loading EVA criteria for phase:', phase);
+
+    // Map phase to stage key
+    const stageKeyMap = {
+      'proposal': 'proposal_early_stage',
+      'mid': 'mid_project',
+      'end': 'end_project'
+    };
+    const stageKey = stageKeyMap[phase] || 'proposal_early_stage';
+
+    const categories = [];
+
+    if (!evaData || !evaData.data_management_plan) {
+      console.warn('[Criteria Extractor] Invalid EVA data format');
+      return getDefaultCriteria(phase);
+    }
+
+    // Extract criteria from eva.json structure
+    evaData.data_management_plan.forEach(section => {
+      if (section.subsections && Array.isArray(section.subsections)) {
+        section.subsections.forEach(sub => {
+          const stageRequirement = sub.stages && sub.stages[stageKey];
+          if (stageRequirement) {
+            categories.push({
+              id: sub.id,
+              name: sub.question,
+              description: stageRequirement,
+              section_id: section.section_id,
+              section_title: section.section_title
+            });
+          }
+        });
+      }
+    });
+
+    if (categories.length === 0) {
+      console.warn('[Criteria Extractor] No EVA criteria extracted, using defaults');
+      return getDefaultCriteria(phase);
+    }
+
+    console.log(`[Criteria Extractor] Loaded ${categories.length} EVA criteria for ${stageKey}`);
+    return {
+      phase: phase,
+      stageKey: stageKey,
+      categories: categories,
+      source: 'eva.json'
+    };
+  }
+
+  /**
+   * Parse JSON criteria file (eva.json format)
+   * @param {string} text - JSON text content
+   * @param {string} phase - Project phase
+   * @returns {Object} - Structured criteria object or null if not valid JSON
+   */
+  function parseJSONCriteria(text, phase = 'proposal') {
+    try {
+      const data = JSON.parse(text);
+      if (data.data_management_plan) {
+        return loadEVACriteria(data, phase);
+      }
+    } catch (e) {
+      console.log('[Criteria Extractor] Not valid JSON, using text extraction');
+    }
+    return null;
+  }
+
   // Export public API
   window.CriteriaExtractor = {
     extractCriteria,
@@ -708,6 +788,8 @@ Post-project: University RDM Service
     getCriteriaStats,
     getDefaultCriteria,
     getDefaultCriteriaText,
+    loadEVACriteria,
+    parseJSONCriteria,
     CATEGORY_DEFINITIONS,
     DEFAULT_CRITERIA_TEXT,
     DEFAULT_CRITERIA_BY_PHASE,

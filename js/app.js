@@ -11,7 +11,8 @@
     criteriaFile: null,
     dmpFile: null,
     evaluationResults: null,
-    isEvaluating: false
+    isEvaluating: false,
+    usingDefaultCriteria: false // Track if using eva.json default
   };
 
   // Initialize app when DOM is ready
@@ -23,6 +24,9 @@
     // Load saved settings from localStorage
     loadSettings();
 
+    // Load default criteria (eva.json)
+    loadDefaultCriteria();
+
     // Setup event listeners
     setupAPIKeyListeners();
     setupAPIConfigListeners();
@@ -30,11 +34,59 @@
     setupPasteTextListeners();
     setupEvaluationListeners();
     setupExportListeners();
+    setupPromptEditorListeners();
 
     // Update UI state
     updateEvaluateButtonState();
+    updateAPIKeyVisibility();
 
     console.log('[App] Initialization complete');
+  }
+
+  /**
+   * Load default criteria from eva.json
+   */
+  async function loadDefaultCriteria() {
+    try {
+      const response = await fetch('eva.json');
+      if (!response.ok) {
+        console.warn('[App] eva.json not found, using fallback criteria');
+        return;
+      }
+
+      const evaData = await response.json();
+      const evaJsonString = JSON.stringify(evaData, null, 2);
+
+      // Create a virtual file from eva.json
+      const blob = new Blob([evaJsonString], { type: 'application/json' });
+      const file = new File([blob], 'eva.json', { type: 'application/json' });
+
+      // Set as default criteria file
+      state.criteriaFile = file;
+      state.usingDefaultCriteria = true;
+
+      // Update UI to show default criteria is loaded
+      const zone = document.getElementById('criteriaUploadZone');
+      const info = document.getElementById('criteriaFileInfo');
+      const nameSpan = document.getElementById('criteriaFileName');
+
+      zone.style.display = 'none';
+      info.classList.remove('d-none');
+      nameSpan.innerHTML = `
+        <i class="fas fa-check-circle text-success me-1"></i>
+        <strong>eva.json</strong> (Default DMP Criteria)
+        <span class="badge bg-secondary ms-2">Pre-loaded</span>
+      `;
+
+      // Hide "Use Default" button since default is now loaded
+      document.getElementById('useDefaultCriteriaBtn').style.display = 'none';
+
+      updateEvaluateButtonState();
+      console.log('[App] Default criteria (eva.json) loaded successfully');
+
+    } catch (error) {
+      console.warn('[App] Could not load eva.json:', error.message);
+    }
   }
 
   /**
@@ -83,6 +135,16 @@
     const modelSelect = document.getElementById('togetherAIModel');
     modelSelect.addEventListener('change', (e) => {
       localStorage.setItem('togetherAIModel', e.target.value);
+
+      // Show warning for showcase models
+      const showcaseModels = ['liquid/lfm2.5-1.2b', 'qwen/qwen3-1.7b'];
+      if (showcaseModels.includes(e.target.value)) {
+        // Only show warning once per session
+        if (!sessionStorage.getItem('showcaseModelWarningShown')) {
+          alert('⚠️ Showcase Model Notice\n\nThis model is provided for demonstration purposes only.\n\nIt is a small parameter model that may not produce accurate evaluation results or cover all criteria. For reliable DMP evaluations, please use larger models like Qwen3 235B, GLM 4.7, or Mistral Ministral 3 3B.');
+          sessionStorage.setItem('showcaseModelWarningShown', 'true');
+        }
+      }
     });
 
     // Test mode toggle
@@ -161,10 +223,12 @@
   function loadAPIConfigModal() {
     const activeProfileId = window.APIConfig.getActiveProfileId();
 
-    // Update profile selector
+    // Update profile selector - include dataplan as first option
     const profileSelect = document.getElementById('apiProfileSelect');
     profileSelect.innerHTML = `
-      <option value="together">Together.ai (Default)</option>
+      <option value="dataplan">DataPLANT (Default)</option>
+      <option value="lmstudio">LM Studio (Local)</option>
+      <option value="together">Together.ai</option>
       <option value="openai">OpenAI Compatible</option>
     `;
 
@@ -174,15 +238,15 @@
       if (!window.APIConfig.DEFAULT_PROFILES[id]) {
         const option = document.createElement('option');
         option.value = id;
-        option.textContent = profile.name;
+        option.textContent = profile.name + ' (Custom)';
         profileSelect.appendChild(option);
       }
     }
 
-    // Add "Custom" option
+    // Add "Add Custom API" option
     const customOption = document.createElement('option');
     customOption.value = 'custom';
-    customOption.textContent = 'Custom Configuration';
+    customOption.textContent = '+ Add Custom API';
     profileSelect.appendChild(customOption);
 
     // Select active profile
@@ -203,33 +267,84 @@
    */
   function loadProfileIntoForm(profileId) {
     let profile;
+    const customProfileGroup = document.getElementById('customProfileNameGroup');
+    const builtInInfo = document.getElementById('builtInProfileInfo');
+    const isBuiltInSecure = profileId === 'dataplan';  // Only dataplan is truly secure/built-in
+
+    // Show/hide built-in profile info alert
+    if (builtInInfo) {
+      builtInInfo.style.display = isBuiltInSecure ? 'block' : 'none';
+    }
+
+    // Disable/hide form fields for built-in secure profiles
+    const formFields = ['apiEndpoint', 'authHeader', 'addHeaderBtn'];
+    formFields.forEach(fieldId => {
+      const field = document.getElementById(fieldId);
+      if (field) {
+        field.disabled = isBuiltInSecure;
+        if (fieldId === 'apiEndpoint' || fieldId === 'authHeader') {
+          field.readOnly = isBuiltInSecure;
+        }
+      }
+    });
+
+    // Disable header inputs container for dataplan
+    const headersContainer = document.getElementById('additionalHeadersContainer');
+    if (headersContainer) {
+      headersContainer.style.opacity = isBuiltInSecure ? '0.5' : '1';
+      headersContainer.style.pointerEvents = isBuiltInSecure ? 'none' : 'auto';
+    }
 
     if (profileId === 'custom') {
       // Show custom profile name input
-      document.getElementById('customProfileNameGroup').style.display = 'block';
-      // Load default together profile as template
-      profile = { ...window.APIConfig.DEFAULT_PROFILES.together };
+      customProfileGroup.style.display = 'block';
+      // Start with blank template for custom API
+      profile = {
+        endpoint: '',
+        authHeaderTemplate: 'Bearer {API_KEY}',
+        additionalHeaders: { 'Content-Type': 'application/json' },
+        modelParamName: 'model',
+        messagesParamName: 'messages',
+        temperature: 0.3,
+        maxTokens: 8000,
+        responseFormat: 'json_object',
+        requiresAPIKey: true
+      };
     } else {
       // Hide custom profile name input
-      document.getElementById('customProfileNameGroup').style.display = 'none';
+      customProfileGroup.style.display = 'none';
       profile = window.APIConfig.getProfile(profileId);
     }
 
     if (!profile) {
-      profile = { ...window.APIConfig.DEFAULT_PROFILES.together };
+      profile = { ...window.APIConfig.DEFAULT_PROFILES.dataplan };
     }
 
-    // Set form values
-    document.getElementById('apiEndpoint').value = profile.endpoint || '';
-    document.getElementById('authHeader').value = profile.authHeaderTemplate || '';
+    // For built-in secure profiles, show placeholder instead of actual values
+    if (isBuiltInSecure) {
+      document.getElementById('apiEndpoint').value = '[Built-in secure endpoint]';
+      document.getElementById('authHeader').value = '[Not required]';
+      loadAdditionalHeaders({}); // Clear headers display
+    } else {
+      // Deobfuscate endpoint for display in form
+      const displayEndpoint = window.APIConfig.deobfuscateURL
+        ? window.APIConfig.deobfuscateURL(profile.endpoint || '')
+        : profile.endpoint;
+
+      // Set form values
+      document.getElementById('apiEndpoint').value = displayEndpoint;
+      document.getElementById('authHeader').value = profile.authHeaderTemplate || '';
+
+      // Load additional headers (exclude Content-Type as it's always included)
+      loadAdditionalHeaders(profile.additionalHeaders || {});
+    }
+
+    // Always set these values
     document.getElementById('modelParamName').value = profile.modelParamName || 'model';
     document.getElementById('messagesParamName').value = profile.messagesParamName || 'messages';
     document.getElementById('temperature').value = profile.temperature || 0.3;
     document.getElementById('maxTokens').value = profile.maxTokens || 8000;
     document.getElementById('responseFormat').value = profile.responseFormat || 'json_object';
-
-    // Load additional headers
-    loadAdditionalHeaders(profile.additionalHeaders || {});
 
     // Update code preview
     updateCodePreview();
@@ -288,6 +403,14 @@
    * Update code preview
    */
   function updateCodePreview() {
+    const profileId = document.getElementById('apiProfileSelect').value;
+
+    // Hide preview for built-in secure profiles (dataplan)
+    if (profileId === 'dataplan') {
+      document.getElementById('fetchCodePreview').textContent = '// Built-in secure configuration\n// API endpoint and headers are managed internally';
+      return;
+    }
+
     const profile = {
       endpoint: document.getElementById('apiEndpoint').value,
       authHeaderTemplate: document.getElementById('authHeader').value,
@@ -332,18 +455,21 @@
    */
   function saveAPIConfiguration() {
     const profileId = document.getElementById('apiProfileSelect').value;
+    const authHeaderTemplate = document.getElementById('authHeader').value.trim();
 
     // Build profile config
     const config = {
-      name: profileId === 'custom' ? document.getElementById('customProfileName').value : document.getElementById('apiProfileSelect').options[document.getElementById('apiProfileSelect').selectedIndex].text,
+      name: profileId === 'custom' ? document.getElementById('customProfileName').value : document.getElementById('apiProfileSelect').options[document.getElementById('apiProfileSelect').selectedIndex].text.replace(' (Custom)', ''),
       endpoint: document.getElementById('apiEndpoint').value,
-      authHeaderTemplate: document.getElementById('authHeader').value,
+      authHeaderTemplate: authHeaderTemplate,
+      requiresAPIKey: authHeaderTemplate.length > 0,
       additionalHeaders: getAdditionalHeaders(),
       modelParamName: document.getElementById('modelParamName').value,
       messagesParamName: document.getElementById('messagesParamName').value,
       temperature: parseFloat(document.getElementById('temperature').value),
       maxTokens: parseInt(document.getElementById('maxTokens').value),
-      responseFormat: document.getElementById('responseFormat').value
+      responseFormat: document.getElementById('responseFormat').value,
+      streamEnabled: true
     };
 
     // If custom profile, save with custom name
@@ -354,10 +480,11 @@
         return;
       }
 
-      const customId = customName.toLowerCase().replace(/\s+/g, '-');
+      const customId = customName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
       window.APIConfig.saveProfile(customId, config);
       window.APIConfig.setActiveProfileId(customId);
-    } else if (profileId === 'together' || profileId === 'openai') {
+      console.log('[App] Custom profile saved:', customId, config);
+    } else if (profileId === 'dataplan' || profileId === 'lmstudio' || profileId === 'together' || profileId === 'openai') {
       // For default profiles, just set as active
       window.APIConfig.setActiveProfileId(profileId);
     } else {
@@ -367,6 +494,10 @@
     }
 
     console.log('[App] API configuration saved:', profileId);
+
+    // Update API key visibility based on new profile
+    updateAPIKeyVisibility();
+    updateEvaluateButtonState();
   }
 
   /**
@@ -395,8 +526,20 @@
       'criteriaFileName',
       'removeCriteriaFile',
       (file) => {
-        state.criteriaFile = file;
-        updateEvaluateButtonState();
+        if (file === null) {
+          // User removed the file, clear criteria completely
+          state.criteriaFile = null;
+          state.usingDefaultCriteria = false;
+          // Show "Use Default" button
+          document.getElementById('useDefaultCriteriaBtn').style.display = 'inline-block';
+          updateEvaluateButtonState();
+        } else {
+          state.criteriaFile = file;
+          state.usingDefaultCriteria = false; // User uploaded custom criteria
+          // Hide "Use Default" button
+          document.getElementById('useDefaultCriteriaBtn').style.display = 'none';
+          updateEvaluateButtonState();
+        }
       }
     );
 
@@ -477,14 +620,14 @@
     info.classList.remove('d-none');
 
     // Show file name with info/warning if needed
-    let displayText = `${file.name} (${window.FileParser.formatFileSize(file.size)})`;
+    let displayText = file.name;
     if (validation.warning) {
       displayText += ' 🤖'; // AI icon for .doc files
       // Show compact tooltip-style info
       nameSpan.setAttribute('title', validation.error);
       nameSpan.style.fontWeight = '500';
     }
-    nameSpan.textContent = displayText;
+    nameSpan.innerHTML = `${displayText} <small class="text-muted">(${window.FileParser.formatFileSize(file.size)})</small>`;
 
     // Call callback
     callback(file);
@@ -502,6 +645,7 @@
     const saveDmpTextBtn = document.getElementById('saveDmpTextBtn');
     const useDefaultCriteria = document.getElementById('useDefaultCriteria');
     const criteriaTextArea = document.getElementById('criteriaTextArea');
+    const useDefaultCriteriaBtn = document.getElementById('useDefaultCriteriaBtn');
 
     const pasteCriteriaModal = new bootstrap.Modal(document.getElementById('pasteCriteriaModal'));
     const pasteDmpModal = new bootstrap.Modal(document.getElementById('pasteDmpModal'));
@@ -514,6 +658,11 @@
         criteriaTextArea.value = window.CriteriaExtractor.getDefaultCriteriaText(phase);
       }
       pasteCriteriaModal.show();
+    });
+
+    // Use default criteria button (eva.json)
+    useDefaultCriteriaBtn.addEventListener('click', () => {
+      loadDefaultCriteria();
     });
 
     // Toggle default criteria text
@@ -538,22 +687,31 @@
 
     // Open DMP paste modal
     pasteDmpBtn.addEventListener('click', () => {
-      const useExampleDmp = document.getElementById('useExampleDmp');
-      // Load example DMP if checkbox is checked
-      if (useExampleDmp.checked) {
-        document.getElementById('dmpTextArea').value = window.CriteriaExtractor.EXAMPLE_DMP_TEXT;
-      }
       pasteDmpModal.show();
     });
 
-    // Toggle example DMP text
-    const useExampleDmp = document.getElementById('useExampleDmp');
-    useExampleDmp.addEventListener('change', (e) => {
-      if (e.target.checked) {
-        document.getElementById('dmpTextArea').value = window.CriteriaExtractor.EXAMPLE_DMP_TEXT;
-      } else {
-        document.getElementById('dmpTextArea').value = '';
-      }
+    // Use example DMP button - directly loads example DMP
+    const useExampleDmpBtn = document.getElementById('useExampleDmpBtn');
+    useExampleDmpBtn.addEventListener('click', () => {
+      // Create a virtual file object from the example DMP text
+      const exampleText = window.CriteriaExtractor.EXAMPLE_DMP_TEXT;
+      const blob = new Blob([exampleText], { type: 'text/plain' });
+      const file = new File([blob], 'example-dmp.txt', { type: 'text/plain' });
+
+      // Set it as the DMP file
+      state.dmpFile = file;
+
+      // Update UI
+      const zone = document.getElementById('dmpUploadZone');
+      const info = document.getElementById('dmpFileInfo');
+      const nameSpan = document.getElementById('dmpFileName');
+
+      zone.style.display = 'none';
+      info.classList.remove('d-none');
+      nameSpan.innerHTML = `Example DMP <small class="text-muted">(${window.FileParser.formatFileSize(blob.size)})</small> <span class="badge bg-info">Alpine Biodiversity</span>`;
+
+      updateEvaluateButtonState();
+      console.log('[App] Example DMP loaded');
     });
 
     // Save criteria text
@@ -579,6 +737,7 @@
 
         // Set it as the criteria file
         state.criteriaFile = file;
+        state.usingDefaultCriteria = false; // User pasted custom criteria
 
         // Update UI
         const zone = document.getElementById('criteriaUploadZone');
@@ -587,7 +746,10 @@
 
         zone.style.display = 'none';
         info.classList.remove('d-none');
-        nameSpan.textContent = `Pasted Text (${window.FileParser.formatFileSize(blob.size)})${result.suitable ? '' : ' - AI Converted'}`;
+        nameSpan.innerHTML = `Pasted Text <small class="text-muted">(${window.FileParser.formatFileSize(blob.size)})</small>${result.suitable ? '' : ' <span class="badge bg-info">AI Converted</span>'}`;
+
+        // Hide "Use Default" button since custom criteria is loaded
+        document.getElementById('useDefaultCriteriaBtn').style.display = 'none';
 
         updateEvaluateButtonState();
 
@@ -667,12 +829,6 @@
         window.ExportService.exportAsMarkdown(state.evaluationResults);
       }
     });
-
-    document.getElementById('exportPdfBtn').addEventListener('click', () => {
-      if (state.evaluationResults) {
-        window.ExportService.exportAsPDF(state.evaluationResults);
-      }
-    });
   }
 
   /**
@@ -680,12 +836,32 @@
    */
   function updateEvaluateButtonState() {
     const evaluateBtn = document.getElementById('evaluateBtn');
-    const apiKey = localStorage.getItem('togetherAPIKey');
     const testMode = localStorage.getItem('llmTestMode') === 'true';
+    const activeProfile = window.APIConfig.getActiveProfile();
+    const needsAPIKey = activeProfile.requiresAPIKey !== false;
+    const apiKey = localStorage.getItem('togetherAPIKey');
 
-    const canEvaluate = state.criteriaFile && state.dmpFile && (apiKey || testMode);
+    // Can evaluate if: files uploaded AND (test mode OR keyless profile OR has API key)
+    const canEvaluate = state.criteriaFile && state.dmpFile &&
+      (testMode || !needsAPIKey || apiKey);
 
     evaluateBtn.disabled = !canEvaluate;
+  }
+
+  /**
+   * Update API key field visibility based on active profile
+   */
+  function updateAPIKeyVisibility() {
+    const activeProfile = window.APIConfig.getActiveProfile();
+    const needsAPIKey = activeProfile.requiresAPIKey !== false;
+
+    // Get the API key section by ID
+    const apiKeySection = document.getElementById('apiKeySection');
+
+    // Show/hide based on profile requirement
+    if (apiKeySection) {
+      apiKeySection.style.display = needsAPIKey ? 'block' : 'none';
+    }
   }
 
   /**
@@ -749,14 +925,14 @@
     resultsCard.style.display = 'block';
     resultsCard.classList.add('fade-in');
 
-    // Update overall score
+    // Update overall score (now calculated from sentences)
     updateOverallScore(results.overallScore);
 
-    // Update scores table
+    // Update simplified scores table
     updateScoresTable(results.categories);
 
-    // Update narrative feedback
-    updateNarrativeFeedback(results.categories);
+    // Update sentence-level feedback
+    updateSentenceFeedback(results.sentenceEvaluations, results.originalDMPText);
 
     // Scroll to results
     setTimeout(() => {
@@ -789,16 +965,14 @@
 
     categories.forEach(cat => {
       const row = document.createElement('tr');
-
-      // Category group (extract number from ID)
-      const categoryGroup = cat.id.match(/^\d+/)[0];
-      const categoryName = getCategoryGroupName(categoryGroup);
+      const statusColor = getStatusColor(cat.status);
 
       row.innerHTML = `
         <td class="criterion-id">${cat.id}</td>
-        <td class="category-label">${categoryName}</td>
         <td>${cat.name}</td>
-        <td class="score-cell">${cat.score}/100</td>
+        <td class="score-cell" style="color: ${statusColor}; font-weight: 600;">
+          ${cat.score}/100
+        </td>
         <td>
           <span class="score-badge ${window.Evaluator.getScoreColorClass(cat.score)}">
             ${cat.status.toUpperCase()}
@@ -808,6 +982,19 @@
 
       tbody.appendChild(row);
     });
+  }
+
+  /**
+   * Get status color for score display
+   */
+  function getStatusColor(status) {
+    const colors = {
+      'excellent': '#0a6638',
+      'good': '#28a745',
+      'pass': '#ffc107',
+      'insufficient': '#dc3545'
+    };
+    return colors[status] || '#6c757d';
   }
 
   /**
@@ -826,23 +1013,106 @@
   }
 
   /**
-   * Update narrative feedback section
+   * Update sentence-level feedback section
    */
-  function updateNarrativeFeedback(categories) {
+  function updateSentenceFeedback(sentenceEvaluations, originalDMPText) {
     const container = document.getElementById('narrativeFeedback');
     container.innerHTML = '';
 
-    categories.forEach(cat => {
-      const section = document.createElement('div');
-      section.className = 'feedback-section ' + cat.status;
+    // Create header
+    const header = document.createElement('div');
+    header.className = 'feedback-header mb-3';
+    header.innerHTML = `
+      <h6><i class="fas fa-file-alt me-2"></i>DMP Document Evaluation</h6>
+      <p class="text-muted small">Click sentences to see detailed evaluation</p>
+    `;
+    container.appendChild(header);
 
-      section.innerHTML = `
-        <h6>${cat.id}. ${cat.name} (${cat.score}/100)</h6>
-        <p>${cat.feedback}</p>
-      `;
+    // Check if we have sentence evaluations
+    if (!sentenceEvaluations || sentenceEvaluations.length === 0) {
+      const noResults = document.createElement('div');
+      noResults.className = 'alert alert-info';
+      noResults.innerHTML = '<i class="fas fa-info-circle me-2"></i>No sentence-level evaluations available. Using legacy feedback format.';
+      container.appendChild(noResults);
+      return;
+    }
 
-      container.appendChild(section);
+    // Build accordion cards
+    sentenceEvaluations.forEach((se, index) => {
+      const card = createSentenceCard(se, index);
+      container.appendChild(card);
     });
+  }
+
+  /**
+   * Create a sentence accordion card
+   */
+  function createSentenceCard(se, index) {
+    const section = document.createElement('div');
+    const statusClass = getStatusClass(se.score);
+    const needsSuggestion = se.score < 75;
+
+    section.className = 'sentence-card-accordion';
+    section.innerHTML = `
+      <div class="sentence-header ${statusClass}">
+        <span class="sentence-preview">${escapeHtml(se.sentence)}</span>
+        <span class="expand-indicator"><i class="fas fa-chevron-right"></i></span>
+      </div>
+      <div class="sentence-body">
+        <div class="sentence-meta">
+          <div class="criteria-tags">
+            ${se.criteriaIds.map(cid => `<span class="criteria-tag">${cid}</span>`).join('')}
+          </div>
+          <div class="score-display">
+            <span class="score-badge ${statusClass}">${se.score}/100</span>
+          </div>
+        </div>
+        <div class="explanation">${escapeHtml(se.explanation)}</div>
+        ${needsSuggestion && se.suggestion ? `
+          <div class="improvement-suggestion">
+            <i class="fas fa-lightbulb text-warning me-2"></i>
+            <strong>Suggestion:</strong> ${escapeHtml(se.suggestion)}
+          </div>
+        ` : ''}
+      </div>
+    `;
+
+    // Click handler
+    const headerEl = section.querySelector('.sentence-header');
+    headerEl.addEventListener('click', () => {
+      section.classList.toggle('expanded');
+    });
+
+    return section;
+  }
+
+  /**
+   * Get status class based on score
+   */
+  function getStatusClass(score) {
+    if (score >= 90) return 'excellent';
+    if (score >= 75) return 'good';
+    if (score >= 60) return 'pass';
+    return 'insufficient';
+  }
+
+  /**
+   * Get status color based on score
+   */
+  function getStatusColorByScore(score) {
+    if (score >= 90) return '#0a6638';
+    if (score >= 75) return '#28a745';
+    if (score >= 60) return '#ffc107';
+    return '#dc3545';
+  }
+
+  /**
+   * Escape HTML to prevent XSS
+   */
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   /**
@@ -984,6 +1254,94 @@
    */
   function hideResults() {
     document.getElementById('resultsCard').style.display = 'none';
+  }
+
+  /**
+   * Setup prompt editor listeners
+   */
+  function setupPromptEditorListeners() {
+    const modal = document.getElementById('promptEditorModal');
+    const saveBtn = document.getElementById('savePromptBtn');
+    const resetBtn = document.getElementById('resetPromptBtn');
+
+    if (!modal) {
+      console.warn('[App] Prompt editor modal not found');
+      return;
+    }
+
+    // Load prompt when modal opens
+    modal.addEventListener('show.bs.modal', () => {
+      const prompt = window.LLMService.loadPromptFromStorage();
+      document.getElementById('systemRoleInput').value = prompt.systemRole;
+      document.getElementById('criteriaContextInput').value = prompt.criteriaContext;
+      document.getElementById('dmpContextInput').value = prompt.dmpContext;
+      updateFullPromptPreview();
+    });
+
+    // Update preview on input (debounced)
+    const inputs = ['systemRoleInput', 'criteriaContextInput', 'dmpContextInput'];
+    let previewTimeout;
+    inputs.forEach(id => {
+      const element = document.getElementById(id);
+      if (element) {
+        element.addEventListener('input', () => {
+          clearTimeout(previewTimeout);
+          previewTimeout = setTimeout(updateFullPromptPreview, 500);
+        });
+      }
+    });
+
+    // Save prompt
+    saveBtn.addEventListener('click', () => {
+      const prompt = {
+        systemRole: document.getElementById('systemRoleInput').value,
+        criteriaContext: document.getElementById('criteriaContextInput').value,
+        dmpContext: document.getElementById('dmpContextInput').value
+      };
+      window.LLMService.savePromptToStorage(prompt);
+
+      // Visual feedback
+      saveBtn.classList.remove('btn-primary');
+      saveBtn.classList.add('btn-success');
+      saveBtn.innerHTML = '<i class="fas fa-check me-1"></i>Saved!';
+      setTimeout(() => {
+        saveBtn.classList.remove('btn-success');
+        saveBtn.classList.add('btn-primary');
+        saveBtn.innerHTML = '<i class="fas fa-save me-1"></i>Save Prompt';
+      }, 2000);
+
+      console.log('[App] Custom prompt saved');
+    });
+
+    // Reset to default
+    resetBtn.addEventListener('click', () => {
+      if (confirm('Reset all prompt sections to default values?')) {
+        const defaultPrompt = window.LLMService.getDefaultPrompt();
+        document.getElementById('systemRoleInput').value = defaultPrompt.systemRole;
+        document.getElementById('criteriaContextInput').value = defaultPrompt.criteriaContext;
+        document.getElementById('dmpContextInput').value = defaultPrompt.dmpContext;
+        updateFullPromptPreview();
+        console.log('[App] Prompt reset to default');
+      }
+    });
+  }
+
+  /**
+   * Update full prompt preview
+   */
+  function updateFullPromptPreview() {
+    const preview = document.getElementById('fullPromptPreview');
+    if (!preview) return;
+
+    const systemRole = document.getElementById('systemRoleInput').value;
+    const criteriaContext = document.getElementById('criteriaContextInput').value;
+    const dmpContext = document.getElementById('dmpContextInput').value;
+
+    // Show with example placeholders
+    const fullPrompt = `=== SYSTEM PROMPT ===\n${systemRole.replace('{phase}', 'proposal/early')}\n\n` +
+                       `=== USER PROMPT ===\n${criteriaContext.replace('{criteriaText}', '[Evaluation criteria will be inserted here]')}\n\n` +
+                       dmpContext.replace('{dmpText}', '[DMP document will be inserted here]');
+    preview.value = fullPrompt;
   }
 
 })();

@@ -1,15 +1,11 @@
 // =============================================================================
 // FILE PARSER MODULE
-// Handles parsing of various file formats: txt, json, docx, pdf, html, md
+// Handles parsing of various file formats: txt, json, docx, html, md
+// Converts documents to markdown for efficient LLM processing
 // =============================================================================
 
 (function(window) {
   'use strict';
-
-  // Set PDF.js worker
-  if (typeof pdfjsLib !== 'undefined') {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  }
 
   /**
    * Parse a text file
@@ -40,61 +36,41 @@
   }
 
   /**
-   * Extract text from old .doc file using raw text extraction + AI cleanup
+   * Parse old .doc file using officeparser library
    * @param {File} file - File object
-   * @returns {Promise<string>} - Extracted and cleaned text
+   * @returns {Promise<string>} - Extracted text content
    */
-  async function extractDocTextWithAI(file) {
+  async function parseDocWithLibrary(file) {
     return new Promise((resolve, reject) => {
+      // Check if officeparser is available
+      if (typeof officeParser === 'undefined') {
+        reject(new Error('officeparser library not loaded. Please save as .docx or paste text instead.'));
+        return;
+      }
+
       const reader = new FileReader();
       reader.onload = async (e) => {
         try {
           const arrayBuffer = e.target.result;
-          const uint8Array = new Uint8Array(arrayBuffer);
 
-          // Extract readable text from binary
-          let rawText = '';
-          for (let i = 0; i < uint8Array.length; i++) {
-            const char = uint8Array[i];
-            // Include printable ASCII characters and common extended ASCII
-            if ((char >= 32 && char <= 126) || char === 10 || char === 13 || char === 9) {
-              rawText += String.fromCharCode(char);
-            } else if (char >= 128 && char <= 255) {
-              // Include extended ASCII for international characters
-              rawText += String.fromCharCode(char);
-            }
-          }
+          // officeparser v6.0.0+ returns an AST object
+          // Call .toText() to extract plain text
+          const ast = await officeParser.parseOffice(arrayBuffer, {
+            outputErrorToConsole: true
+          });
 
-          // Clean up the raw text - remove excessive whitespace and control characters
-          rawText = rawText
-            .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, '') // Remove control characters
-            .replace(/\s{3,}/g, '\n\n') // Replace 3+ spaces with paragraph breaks
-            .replace(/(.)\1{10,}/g, '$1') // Remove character repetitions (10+)
-            .trim();
+          const text = ast.toText();
 
-          if (rawText.length < 100) {
-            reject(new Error('Insufficient text extracted from .doc file. Please save as .docx or paste text.'));
+          if (!text || text.trim().length < 50) {
+            reject(new Error('Insufficient text extracted from .doc file. Please save as .docx or paste text instead.'));
             return;
           }
 
-          console.log('[Parser] Extracted raw text from .doc, length:', rawText.length);
-
-          // Use AI to clean up the text if available
-          if (window.LLMService && !window.LLMService.isTestMode()) {
-            try {
-              const cleaned = await cleanTextWithAI(rawText);
-              resolve(cleaned);
-            } catch (aiError) {
-              console.warn('[Parser] AI cleanup failed, using raw text:', aiError);
-              resolve(rawText); // Fallback to raw text
-            }
-          } else {
-            // Test mode or no AI available - return raw text
-            resolve(rawText);
-          }
-
+          console.log('[Parser] .doc parsed with officeparser, length:', text.length);
+          resolve(text);
         } catch (err) {
-          reject(new Error(`DOC extraction failed: ${err.message}`));
+          console.error('[Parser] officeparser error:', err);
+          reject(new Error('Failed to parse .doc file. Please save as .docx or paste text instead.'));
         }
       };
       reader.onerror = () => reject(new Error('File read failed'));
@@ -103,71 +79,10 @@
   }
 
   /**
-   * Clean extracted text using AI
-   * @param {string} rawText - Raw extracted text
-   * @returns {Promise<string>} - Cleaned text
-   */
-  async function cleanTextWithAI(rawText) {
-    const apiKey = window.LLMService.getAPIKey();
-    if (!apiKey) {
-      console.log('[Parser] No API key, skipping AI cleanup');
-      return rawText;
-    }
-
-    const model = window.LLMService.getSelectedModel();
-    const activeProfile = window.APIConfig.getActiveProfile();
-
-    const systemPrompt = `You are a text extraction assistant. Your job is to clean up text extracted from a binary Word document (.doc file). The text may contain formatting artifacts, gibberish characters, and scrambled content mixed with the actual document text.
-
-Extract and return ONLY the meaningful document content, removing:
-- Binary artifacts and gibberish
-- Repeated characters or formatting codes
-- Document metadata and headers
-- Navigation or UI elements
-
-Preserve:
-- All meaningful text content
-- Paragraph structure
-- Headings and sections
-- Lists and formatting cues`;
-
-    const userPrompt = `Clean up this text extracted from a .doc file and return only the meaningful content:
-
-${rawText.substring(0, 15000)}${rawText.length > 15000 ? '\n\n[... text truncated ...]' : ''}`;
-
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ];
-
-    const fetchConfig = window.APIConfig.generateFetchConfig(
-      activeProfile,
-      apiKey,
-      model,
-      messages
-    );
-
-    const response = await fetch(fetchConfig.url, fetchConfig.options);
-
-    if (!response.ok) {
-      throw new Error(`API error ${response.status}`);
-    }
-
-    const data = await response.json();
-    const cleaned = data.choices[0]?.message?.content;
-
-    if (!cleaned) {
-      throw new Error('No content from AI');
-    }
-
-    console.log('[Parser] AI cleaned text, original:', rawText.length, 'cleaned:', cleaned.length);
-    return cleaned;
-  }
-
-  /**
    * Parse a DOCX/DOC file using mammoth.js with fallback for old .doc
+   * Converts to markdown for better structure preservation
    * @param {File} file - File object
-   * @returns {Promise<string>} - Extracted text content
+   * @returns {Promise<string>} - Markdown content
    */
   async function parseDocxFile(file) {
     if (typeof mammoth === 'undefined') {
@@ -185,25 +100,48 @@ ${rawText.substring(0, 15000)}${rawText.length > 15000 ? '\n\n[... text truncate
           const isZip = uint8Array[0] === 0x50 && uint8Array[1] === 0x4B; // PK header
 
           if (!isZip) {
-            // Old .doc format detected - try AI extraction
-            console.warn('[Parser] Old .doc format detected, trying AI extraction...');
+            // Not a ZIP file - could be old .doc, HTML saved as .doc, or other format
+            console.warn('[Parser] Non-ZIP file with .doc/.docx extension, detecting format...');
+
+            // Check if it's actually HTML (common when HTML is saved with .doc extension)
+            const textContent = new TextDecoder('utf-8', { fatal: false }).decode(uint8Array);
+            const isHtml = textContent.trim().toLowerCase().startsWith('<!doctype') ||
+                           textContent.trim().toLowerCase().startsWith('<html') ||
+                           textContent.includes('xmlns:w="urn:schemas-microsoft-com:office:word"');
+
+            if (isHtml) {
+              console.log('[Parser] Detected HTML content in .doc file, parsing as HTML...');
+              try {
+                const htmlResult = await parseHtmlContent(textContent);
+                resolve(htmlResult);
+                return;
+              } catch (htmlErr) {
+                reject(new Error('HTML parsing failed. Try: Paste text instead.'));
+                return;
+              }
+            }
+
+            // Try officeparser for old .doc format
+            console.log('[Parser] Trying officeparser for old .doc format...');
             try {
-              const extracted = await extractDocTextWithAI(file);
+              const extracted = await parseDocWithLibrary(file);
               resolve(extracted);
               return;
             } catch (extractErr) {
+              console.warn('[Parser] officeparser failed:', extractErr.message);
               reject(new Error('DOC file could not be parsed. Try: Save as .docx or use "Paste Text Instead".'));
               return;
             }
           }
 
-          // Standard DOCX parsing
-          const result = await mammoth.extractRawText({ arrayBuffer });
+          // Convert DOCX to markdown (preserves structure: headings, lists, formatting)
+          const result = await mammoth.convertToMarkdown({ arrayBuffer });
 
           if (result.messages && result.messages.length > 0) {
             console.warn('[DOCX Parser] Warnings:', result.messages);
           }
 
+          console.log('[Parser] DOCX converted to markdown, length:', result.value.length);
           resolve(result.value);
         } catch (err) {
           // Provide concise error messages
@@ -220,65 +158,69 @@ ${rawText.substring(0, 15000)}${rawText.length > 15000 ? '\n\n[... text truncate
   }
 
   /**
-   * Parse a PDF file using PDF.js
+   * Parse an HTML file and convert to markdown-like structure
    * @param {File} file - File object
-   * @returns {Promise<string>} - Extracted text content
-   */
-  async function parsePdfFile(file) {
-    if (typeof pdfjsLib === 'undefined') {
-      throw new Error('PDF.js library not loaded');
-    }
-
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          const arrayBuffer = e.target.result;
-          const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-
-          let fullText = '';
-
-          // Extract text from each page
-          for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-            const page = await pdf.getPage(pageNum);
-            const textContent = await page.getTextContent();
-            const pageText = textContent.items.map(item => item.str).join(' ');
-            fullText += pageText + '\n\n';
-          }
-
-          resolve(fullText.trim());
-        } catch (err) {
-          reject(new Error(`PDF parse error: ${err.message.substring(0, 40)}...`));
-        }
-      };
-      reader.onerror = () => reject(new Error('PDF read failed'));
-      reader.readAsArrayBuffer(file);
-    });
-  }
-
-  /**
-   * Parse an HTML file
-   * @param {File} file - File object
-   * @returns {Promise<string>} - Extracted text content
+   * @returns {Promise<string>} - Markdown-like content
    */
   async function parseHtmlFile(file) {
     const html = await parseTextFile(file);
+    return parseHtmlContent(html);
+  }
 
+  /**
+   * Parse HTML content string and convert to markdown-like structure
+   * @param {string} html - HTML content string
+   * @returns {Promise<string>} - Markdown-like content
+   */
+  async function parseHtmlContent(html) {
     // Create a temporary DOM element to parse HTML
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = html;
 
     // Remove script and style elements
-    const scripts = tempDiv.querySelectorAll('script, style');
+    const scripts = tempDiv.querySelectorAll('script, style, nav, footer, header');
     scripts.forEach(el => el.remove());
 
-    // Get text content
-    let text = tempDiv.textContent || tempDiv.innerText || '';
+    // Convert HTML to markdown-like structure
+    let md = '';
 
-    // Clean up whitespace
-    text = text.replace(/\s+/g, ' ').trim();
+    // Process headings
+    tempDiv.querySelectorAll('h1').forEach(el => { md += `# ${el.textContent.trim()}\n\n`; el.remove(); });
+    tempDiv.querySelectorAll('h2').forEach(el => { md += `## ${el.textContent.trim()}\n\n`; el.remove(); });
+    tempDiv.querySelectorAll('h3').forEach(el => { md += `### ${el.textContent.trim()}\n\n`; el.remove(); });
+    tempDiv.querySelectorAll('h4').forEach(el => { md += `#### ${el.textContent.trim()}\n\n`; el.remove(); });
 
-    return text;
+    // Process lists
+    tempDiv.querySelectorAll('ul > li').forEach(el => { md += `- ${el.textContent.trim()}\n`; });
+    tempDiv.querySelectorAll('ol > li').forEach((el, i) => { md += `${i + 1}. ${el.textContent.trim()}\n`; });
+
+    // Process paragraphs
+    tempDiv.querySelectorAll('p').forEach(el => {
+      const text = el.textContent.trim();
+      if (text) md += `${text}\n\n`;
+    });
+
+    // Process tables (simple conversion)
+    tempDiv.querySelectorAll('table').forEach(table => {
+      const rows = table.querySelectorAll('tr');
+      rows.forEach((row, rowIndex) => {
+        const cells = row.querySelectorAll('th, td');
+        const cellTexts = Array.from(cells).map(cell => cell.textContent.trim());
+        md += `| ${cellTexts.join(' | ')} |\n`;
+        if (rowIndex === 0) {
+          md += `| ${cellTexts.map(() => '---').join(' | ')} |\n`;
+        }
+      });
+      md += '\n';
+    });
+
+    // If no structured content found, fall back to plain text
+    if (!md.trim()) {
+      md = tempDiv.textContent || '';
+      md = md.replace(/\s+/g, ' ').trim();
+    }
+
+    return md;
   }
 
   /**
@@ -325,10 +267,6 @@ ${rawText.substring(0, 15000)}${rawText.length > 15000 ? '\n\n[... text truncate
           text = await parseDocxFile(file);
           break;
 
-        case 'pdf':
-          text = await parsePdfFile(file);
-          break;
-
         case 'html':
         case 'htm':
           text = await parseHtmlFile(file);
@@ -362,10 +300,10 @@ ${rawText.substring(0, 15000)}${rawText.length > 15000 ? '\n\n[... text truncate
   /**
    * Validate file before parsing
    * @param {File} file - File object
-   * @param {Array<string>} allowedExtensions - Allowed extensions (e.g., ['txt', 'pdf'])
+   * @param {Array<string>} allowedExtensions - Allowed extensions (e.g., ['txt', 'docx'])
    * @returns {Object} - {valid: boolean, error: string}
    */
-  function validateFile(file, allowedExtensions = ['txt', 'json', 'docx', 'doc', 'pdf', 'html', 'htm', 'md', 'markdown']) {
+  function validateFile(file, allowedExtensions = ['txt', 'json', 'docx', 'doc', 'html', 'htm', 'md', 'markdown']) {
     if (!file) {
       return { valid: false, error: 'No file provided' };
     }
@@ -373,12 +311,12 @@ ${rawText.substring(0, 15000)}${rawText.length > 15000 ? '\n\n[... text truncate
     const fileName = file.name.toLowerCase();
     const extension = fileName.split('.').pop();
 
-    // Info for old .doc files (AI-powered extraction)
+    // Info for old .doc files (library-based parsing)
     if (extension === 'doc') {
       return {
         valid: true,
         warning: true,
-        error: 'Old .doc format will use AI-powered text extraction. Best results with .docx.'
+        error: 'Old .doc format will be parsed using officeparser library. Best results with .docx.'
       };
     }
 
@@ -432,7 +370,6 @@ ${rawText.substring(0, 15000)}${rawText.length > 15000 ? '\n\n[... text truncate
     parseTextFile,
     parseJsonFile,
     parseDocxFile,
-    parsePdfFile,
     parseHtmlFile,
     parseMarkdownFile
   };

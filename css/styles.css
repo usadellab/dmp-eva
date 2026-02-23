@@ -90,12 +90,12 @@ body {
     color: #155724;
 }
 
-.score-fair {
+.score-pass {
     background-color: #fff3cd;
     color: #856404;
 }
 
-.score-poor {
+.score-insufficient {
     background-color: #f8d7da;
     color: #721c24;
 }
@@ -131,19 +131,19 @@ body {
     color: #28a745;
 }
 
-.feedback-section.fair {
+.feedback-section.pass {
     border-left-color: var(--warning-color);
 }
 
-.feedback-section.fair h6 {
+.feedback-section.pass h6 {
     color: #d39e00;
 }
 
-.feedback-section.poor {
+.feedback-section.insufficient {
     border-left-color: var(--danger-color);
 }
 
-.feedback-section.poor h6 {
+.feedback-section.insufficient h6 {
     color: var(--danger-color);
 }
 
@@ -381,10 +381,26 @@ small, .small {
     flex: 0 0 10%;
 }
 
-/* API Config button styling */
-#openAPIConfigBtn {
+/* API Config button styling - unified for both buttons */
+#openAPIConfigBtn,
+#editPromptBtn {
     font-size: 0.875rem;
     padding: 0.375rem 0.75rem;
+}
+
+/* Upload section action buttons - unified styling */
+#criteriaButtons,
+#dmpButtons {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+#criteriaButtons .btn,
+#dmpButtons .btn {
+    font-size: 0.875rem;
+    padding: 0.375rem 0.75rem;
+    flex: 1 1 0;
 }
 
 /* Custom profile name group */
@@ -424,12 +440,6 @@ small, .small {
     line-height: 1.6;
     resize: vertical;
     min-height: 400px;
-}
-
-/* Paste text buttons */
-#pasteCriteriaBtn,
-#pasteDmpBtn {
-    margin-top: 0.5rem;
 }
 
 /* Alert styling in paste modals */
@@ -604,4 +614,236 @@ small, .small {
 /* Smooth scroll behavior */
 #streamingOutputContainer {
     scroll-behavior: smooth;
+}
+
+/* ======================================
+   SENTENCE EVALUATION CARDS
+   ====================================== */
+
+/* Sentence Evaluation Cards */
+.sentence-evaluation-card {
+    background: #fff;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    transition: box-shadow 0.2s;
+}
+
+.sentence-evaluation-card:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.sentence-text {
+    font-size: 1rem;
+    line-height: 1.6;
+    padding: 0.75rem;
+    border-radius: 4px;
+    margin-bottom: 0.75rem;
+    border-left: 4px solid #6c757d;
+    background-color: #f8f9fa;
+}
+
+.sentence-text.excellent {
+    border-left-color: #0a6638;
+    background-color: #d1f4e0;
+}
+
+.sentence-text.good {
+    border-left-color: #28a745;
+    background-color: #d4edda;
+}
+
+.sentence-text.pass {
+    border-left-color: #ffc107;
+    background-color: #fff3cd;
+}
+
+.sentence-text.insufficient {
+    border-left-color: #dc3545;
+    background-color: #f8d7da;
+}
+
+.sentence-number {
+    display: inline-block;
+    background: #6c757d;
+    color: white;
+    font-size: 0.75rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    margin-right: 0.5rem;
+    font-weight: 600;
+}
+
+.sentence-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.criteria-tags {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+}
+
+.criteria-tag {
+    display: inline-block;
+    background: #e9ecef;
+    color: #495057;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    font-weight: 600;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.criteria-tag:hover {
+    background: #0d6efd;
+    color: white;
+    cursor: default;
+}
+
+.sentence-score {
+    font-size: 1rem;
+}
+
+.sentence-explanation {
+    font-size: 0.875rem;
+    color: #6c757d;
+    font-style: italic;
+    padding-top: 0.5rem;
+    border-top: 1px dashed #e9ecef;
+    line-height: 1.5;
+}
+
+/* Feedback header */
+.feedback-header h6 {
+    color: #212529;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+/* Adjust narrative feedback container for sentence cards */
+#narrativeFeedback {
+    max-height: 800px;
+    overflow-y: auto;
+}
+
+/* ======================================
+   ACCORDION SENTENCE CARDS
+   ====================================== */
+
+.sentence-card-accordion {
+    background: #fff;
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    transition: box-shadow 0.2s ease;
+}
+
+.sentence-card-accordion:hover {
+    box-shadow: 0 3px 10px rgba(0,0,0,0.12);
+}
+
+.sentence-header {
+    padding: 1rem 1.25rem;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-left: 4px solid #6c757d;
+    transition: background-color 0.2s ease;
+    user-select: none;
+}
+
+.sentence-header.excellent {
+    border-left-color: #0a6638;
+    background: linear-gradient(90deg, #d1f4e0 0%, #fff 20%);
+}
+
+.sentence-header.good {
+    border-left-color: #28a745;
+    background: linear-gradient(90deg, #d4edda 0%, #fff 20%);
+}
+
+.sentence-header.pass {
+    border-left-color: #ffc107;
+    background: linear-gradient(90deg, #fff3cd 0%, #fff 20%);
+}
+
+.sentence-header.insufficient {
+    border-left-color: #dc3545;
+    background: linear-gradient(90deg, #f8d7da 0%, #fff 20%);
+}
+
+.sentence-header:hover {
+    filter: brightness(0.98);
+}
+
+.sentence-preview {
+    flex: 1;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: #333;
+}
+
+.expand-indicator {
+    color: #adb5bd;
+    transition: transform 0.2s ease;
+    margin-left: 1rem;
+}
+
+.sentence-card-accordion.expanded .expand-indicator {
+    transform: rotate(90deg);
+    color: #4fb3d9;
+}
+
+.sentence-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+    background-color: #fafbfc;
+    border-top: 1px solid transparent;
+}
+
+.sentence-card-accordion.expanded .sentence-body {
+    max-height: 500px;
+    padding: 1rem 1.25rem;
+    border-top-color: #e9ecef;
+}
+
+.sentence-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.score-display {
+    flex-shrink: 0;
+}
+
+.explanation {
+    font-size: 0.875rem;
+    color: #6c757d;
+    line-height: 1.5;
+}
+
+.improvement-suggestion {
+    margin-top: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: linear-gradient(90deg, #fff8e1 0%, #fffdf5 100%);
+    border-radius: 6px;
+    border-left: 3px solid #ffc107;
+    font-size: 0.875rem;
+    color: #664d03;
+}
+
+/* Update brand colors to match elab2arc */
+:root {
+    --brand-primary: #4fb3d9;
+    --brand-primary-hover: #3a9fc5;
 }
