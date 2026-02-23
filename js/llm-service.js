@@ -208,15 +208,23 @@ Evaluate. Return compact JSON.`
       return JSON.parse(jsonStr);
     } catch (e) {
       console.warn('[JSON Repair] Standard parse failed, attempting repair...');
+      console.warn('[JSON Repair] Error:', e.message);
+      console.warn('[JSON Repair] Response length:', jsonStr.length);
+      console.warn('[JSON Repair] First 200 chars:', jsonStr.substring(0, 200));
+      console.warn('[JSON Repair] Last 200 chars:', jsonStr.substring(jsonStr.length - 200));
 
-      // Common fixes
-      let repaired = jsonStr;
+      let repaired = jsonStr.trim();
 
       // Remove markdown code blocks if present
       repaired = repaired.replace(/```json\s*/g, '').replace(/```\s*/g, '');
 
+      // Try to extract JSON object from text (handles extra text before/after)
+      const jsonMatch = repaired.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        repaired = jsonMatch[0];
+      }
+
       // Fix unquoted criteria IDs like [1a] -> ["1a"], [1a,2b] -> ["1a","2b"]
-      // Match patterns like [1a], [1a, 2b], [1a,2b,3c] etc.
       repaired = repaired.replace(/\[([0-9][a-z](?:\s*,\s*[0-9][a-z])*)\]/g, (match, content) => {
         const ids = content.split(',').map(id => `"${id.trim()}"`);
         return `[${ids.join(',')}]`;
@@ -231,8 +239,53 @@ Evaluate. Return compact JSON.`
       try {
         return JSON.parse(repaired);
       } catch (e2) {
-        console.error('[JSON Repair] Repair failed:', e2);
-        return null;
+        console.warn('[JSON Repair] First repair attempt failed:', e2.message);
+
+        // Try to fix truncated JSON by closing unclosed brackets
+        let truncated = repaired;
+        const openBraces = (truncated.match(/{/g) || []).length;
+        const closeBraces = (truncated.match(/}/g) || []).length;
+        const openBrackets = (truncated.match(/\[/g) || []).length;
+        const closeBrackets = (truncated.match(/]/g) || []).length;
+
+        // Add missing closing brackets
+        for (let i = 0; i < openBrackets - closeBrackets; i++) truncated += ']';
+        for (let i = 0; i < openBraces - closeBraces; i++) truncated += '}';
+
+        // Remove trailing comma before closing
+        truncated = truncated.replace(/,(\s*[}\]])/g, '$1');
+
+        console.log('[JSON Repair] Attempting truncated fix, added',
+          openBrackets - closeBrackets, 'brackets and',
+          openBraces - closeBraces, 'braces');
+
+        try {
+          return JSON.parse(truncated);
+        } catch (e3) {
+          console.error('[JSON Repair] All repair attempts failed');
+          console.error('[JSON Repair] Final attempt error:', e3.message);
+
+          // Last resort: try to find a valid JSON object
+          try {
+            // Try parsing just the start until we hit invalid content
+            for (let len = repaired.length; len > 100; len -= 100) {
+              try {
+                let partial = repaired.substring(0, len);
+                // Try to close it properly
+                const pOpenBraces = (partial.match(/{/g) || []).length;
+                const pCloseBraces = (partial.match(/}/g) || []).length;
+                const pOpenBrackets = (partial.match(/\[/g) || []).length;
+                const pCloseBrackets = (partial.match(/]/g) || []).length;
+                for (let i = 0; i < pOpenBrackets - pCloseBrackets; i++) partial += ']';
+                for (let i = 0; i < pOpenBraces - pCloseBraces; i++) partial += '}';
+                partial = partial.replace(/,(\s*[}\]])/g, '$1');
+                return JSON.parse(partial);
+              } catch {}
+            }
+          } catch (e4) {}
+
+          return null;
+        }
       }
     }
   }
