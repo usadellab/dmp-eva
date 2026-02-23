@@ -64,6 +64,12 @@
                         <div class="mb-3">
                             <label for="togetherAIModel" class="form-label">Primary Model</label>
                             <select class="form-select" id="togetherAIModel">
+                                <optgroup label="Together.ai (Cloud)">
+                                    <option value="Qwen/Qwen3-235B-A22B-Instruct-2507-tput">Qwen3 235B Instruct</option>
+                                    <option value="openai/gpt-oss-20b">GPT OSS 20B</option>
+                                    <option value="openai/gpt-oss-120b">GPT OSS 120B</option>
+                                    <option value="deepseek-ai/DeepSeek-R1-0528-tput">DeepSeek R1</option>
+                                </optgroup>
                                 <optgroup label="LM Studio (Local)">
                                     <option value="qwen3-235b-a22b-instruct-2507-mlx">Qwen3 235B (MLX)</option>
                                     <option value="qwen/qwen3-4b-2507">Qwen3 4B</option>
@@ -71,12 +77,7 @@
                                     <option value="qwen/qwen3-1.7b">Qwen3 1.7B (Showcase)</option>
                                     <option value="liquid/lfm2.5-1.2b">LFM2.5 1.2B (Showcase)</option>
                                 </optgroup>
-                                <optgroup label="Together.ai (Cloud)">
-                                    <option value="Qwen/Qwen3-235B-A22B-Instruct-2507-tput">Qwen3 235B Instruct</option>
-                                    <option value="openai/gpt-oss-20b">GPT OSS 20B</option>
-                                    <option value="openai/gpt-oss-120b">GPT OSS 120B</option>
-                                    <option value="deepseek-ai/DeepSeek-R1-0528-tput">DeepSeek R1</option>
-                                </optgroup>
+                                
                             </select>
                         </div>
 
