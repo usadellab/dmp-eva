@@ -12,17 +12,82 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="css/styles.css?v=20250223">
+    <link rel="stylesheet" href="css/styles.css?v=20260422g">
 </head>
 <body>
     <div class="container-fluid">
         <!-- Header -->
-        <header class="py-4 mb-4 border-bottom">
-            <div class="d-flex align-items-center">
-                <i class="fas fa-clipboard-check fa-2x text-primary me-3"></i>
-                <h1 class="h2 mb-0">DMP Evaluation Tool</h1>
+        <header class="py-3 mb-4 border-bottom">
+            <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center ms-4">
+                    <i class="fas fa-clipboard-check fa-2x text-primary me-3"></i>
+                    <div>
+                        <h1 class="h4 mb-0">DMP Evaluation Tool</h1>
+                        <p class="text-muted small mb-0">AI-powered Data Management Plan evaluation</p>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <!-- Advanced Dropdown -->
+                    <div class="dropdown">
+                        <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="advancedDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-sliders-h me-1"></i>Advanced
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="advancedDropdown">
+                            <li>
+                                <a class="dropdown-item" href="#" id="loadResultsMenuItem">
+                                    <i class="fas fa-upload me-2"></i>Load Results
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <div class="dropdown-item-text">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="testModeMenuItem">
+                                        <label class="form-check-label" for="testModeMenuItem">Test Mode</label>
+                                    </div>
+                                    <small class="text-muted">Use sample data, no API calls</small>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                    <!-- About Dropdown -->
+                    <div class="dropdown">
+                        <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="aboutDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-info-circle me-1"></i>About
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="aboutDropdown">
+                            <li>
+                                <h6 class="dropdown-header">
+                                    <i class="fas fa-book me-1"></i>DMP Evaluation Criteria
+                                </h6>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="https://zenodo.org/records/19630859" target="_blank">
+                                    <i class="fas fa-external-link-alt me-2"></i>View on Zenodo
+                                </a>
+                            </li>
+                            <li>
+                                <small class="dropdown-item-text text-muted">
+                                    Focus on project-lifecycle, research discipline and AI-assisted evaluations
+                                </small>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <h6 class="dropdown-header">
+                                    <i class="fab fa-github me-1"></i>Source Code
+                                </h6>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="https://github.com/usadellab/dmp-eva" target="_blank">
+                                    <i class="fas fa-external-link-alt me-2"></i>GitHub Repository
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
             </div>
-            <p class="text-muted mb-0">AI-powered Data Management Plan evaluation</p>
+            <!-- Hidden file input for load results -->
+            <input type="file" id="loadJsonInput" accept=".json" style="display: none;">
         </header>
 
         <div class="row">
@@ -61,32 +126,35 @@
                         </div>
 
                         <!-- Model Selection -->
-                        <div class="mb-3">
+                        <div class="mb-3" id="modelSelectionSection">
                             <label for="togetherAIModel" class="form-label">Primary Model</label>
                             <select class="form-select" id="togetherAIModel">
-                                <optgroup label="Together.ai (Cloud)">
+                                <optgroup label="Together.ai (Cloud)" id="togetherModels">
                                     <option value="Qwen/Qwen3-235B-A22B-Instruct-2507-tput">Qwen3 235B Instruct</option>
                                     <option value="openai/gpt-oss-20b">GPT OSS 20B</option>
                                     <option value="openai/gpt-oss-120b">GPT OSS 120B</option>
+                                    <option value="minimax/minimax-m2.7">MiniMax M2.7</option>
+                                    <option value="Qwen/Qwen3.5-9B">Qwen3.5 9B</option>
                                     <option value="deepseek-ai/DeepSeek-R1-0528-tput">DeepSeek R1</option>
                                 </optgroup>
-                                <optgroup label="LM Studio (Local)">
+                                <optgroup label="LM Studio (Local)" id="lmstudioModels">
+                                    <option value="minimax/minimax-m2.7">MiniMax M2.7 (Recommended)</option>
+                                    <option value="openai/gpt-oss-120b">GPT OSS 120B</option>
+                                    <option value="openai/gpt-oss-20b">GPT OSS 20B</option>
                                     <option value="qwen3-235b-a22b-instruct-2507-mlx">Qwen3 235B (MLX)</option>
-                                    <option value="qwen/qwen3-4b-2507">Qwen3 4B</option>
-                                    <option value="mistralai/ministral-3-3b">Mistral Ministral 3 3B</option>
-                                    <option value="qwen/qwen3-1.7b">Qwen3 1.7B (Showcase)</option>
-                                    <option value="liquid/lfm2.5-1.2b">LFM2.5 1.2B (Showcase)</option>
+                                    <option value="qwen/qwen3.5-9b">Qwen3.5 9B</option>
                                 </optgroup>
-                                
                             </select>
                         </div>
 
-                        <!-- Test Mode -->
-                        <div class="form-check form-switch mb-3">
-                            <input class="form-check-input" type="checkbox" id="llmTestMode">
-                            <label class="form-check-label" for="llmTestMode">
-                                Test Mode (use sample data, no API calls)
-                            </label>
+                        <!-- DataPLANT Model Note (shown when dataplan profile is active) -->
+                        <div class="mb-3" id="dataplanModelNote" style="display: none;">
+                            <label class="form-label">Primary Model</label>
+                            <div class="alert alert-info mb-0 py-2">
+                                <i class="fas fa-cog me-2"></i>
+                                <strong>Qwen3 235B Instruct</strong>
+                                <small class="text-muted ms-2">(Fixed for DataPLANT profile)</small>
+                            </div>
                         </div>
 
                         <!-- Project Phase -->
@@ -148,6 +216,12 @@
                                     <i class="fas fa-check-circle me-2"></i>
                                     <span id="dmpFileName"></span>
                                     <button type="button" class="btn-close float-end" id="removeDmpFile"></button>
+                                </div>
+                            </div>
+                            <div id="dmpSizeWarning" class="mt-2 d-none">
+                                <div class="alert alert-warning mb-0">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    <span id="dmpSizeWarningText"></span>
                                 </div>
                             </div>
                             <div class="d-flex gap-2 mt-2" id="dmpButtons">
@@ -597,12 +671,12 @@
     </script>
 
     <!-- Application Scripts -->
-    <script src="js/file-parser.js?v=20250223"></script>
-    <script src="js/criteria-extractor.js?v=20250223"></script>
-    <script src="js/api-config.js?v=20250223"></script>
-    <script src="js/llm-service.js?v=20250223"></script>
-    <script src="js/evaluator.js?v=20250223"></script>
-    <script src="js/export-service.js?v=20250223"></script>
-    <script src="js/app.js?v=20250223"></script>
+    <script src="js/file-parser.js?v=20260425"></script>
+    <script src="js/criteria-extractor.js?v=20260425"></script>
+    <script src="js/api-config.js?v=20260425"></script>
+    <script src="js/llm-service.js?v=20260422f"></script>
+    <script src="js/evaluator.js?v=20260422b"></script>
+    <script src="js/export-service.js?v=20260425"></script>
+    <script src="js/app.js?v=20260422o"></script>
 </body>
 </html>

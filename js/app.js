@@ -39,6 +39,7 @@
     // Update UI state
     updateEvaluateButtonState();
     updateAPIKeyVisibility();
+    updateModelSelectionVisibility();
 
     console.log('[App] Initialization complete');
   }
@@ -105,8 +106,10 @@
       document.getElementById('togetherAIModel').value = model;
     }
 
-    if (testMode === 'true') {
-      document.getElementById('llmTestMode').checked = true;
+    // Sync test mode with menu checkbox
+    const testModeCheckbox = document.getElementById('testModeMenuItem');
+    if (testModeCheckbox) {
+      testModeCheckbox.checked = testMode === 'true';
     }
   }
 
@@ -135,23 +138,16 @@
     const modelSelect = document.getElementById('togetherAIModel');
     modelSelect.addEventListener('change', (e) => {
       localStorage.setItem('togetherAIModel', e.target.value);
-
-      // Show warning for showcase models
-      const showcaseModels = ['liquid/lfm2.5-1.2b', 'qwen/qwen3-1.7b'];
-      if (showcaseModels.includes(e.target.value)) {
-        // Only show warning once per session
-        if (!sessionStorage.getItem('showcaseModelWarningShown')) {
-          alert('⚠️ Showcase Model Notice\n\nThis model is provided for demonstration purposes only.\n\nIt is a small parameter model that may not produce accurate evaluation results or cover all criteria. For reliable DMP evaluations, please use larger models like Qwen3 235B, GLM 4.7, or Mistral Ministral 3 3B.');
-          sessionStorage.setItem('showcaseModelWarningShown', 'true');
-        }
-      }
     });
 
-    // Test mode toggle
-    const testModeToggle = document.getElementById('llmTestMode');
-    testModeToggle.addEventListener('change', (e) => {
-      localStorage.setItem('llmTestMode', e.target.checked);
-    });
+    // Test mode toggle (in header menu)
+    const testModeToggle = document.getElementById('testModeMenuItem');
+    if (testModeToggle) {
+      testModeToggle.addEventListener('change', (e) => {
+        localStorage.setItem('llmTestMode', e.target.checked);
+        updateEvaluateButtonState();
+      });
+    }
   }
 
   /**
@@ -497,6 +493,7 @@
 
     // Update API key visibility based on new profile
     updateAPIKeyVisibility();
+    updateModelSelectionVisibility();
     updateEvaluateButtonState();
   }
 
@@ -552,9 +549,44 @@
       'removeDmpFile',
       (file) => {
         state.dmpFile = file;
+        if (file) {
+          checkDMPSizeWarning(file.size);
+        } else {
+          // Clear warning when file removed
+          document.getElementById('dmpSizeWarning').classList.add('d-none');
+        }
         updateEvaluateButtonState();
       }
     );
+  }
+
+  /**
+   * Check DMP file size and show warning if > 10KB with time estimate
+   * @param {number} sizeInBytes - File size in bytes
+   */
+  function checkDMPSizeWarning(sizeInBytes) {
+    const warningEl = document.getElementById('dmpSizeWarning');
+    const warningTextEl = document.getElementById('dmpSizeWarningText');
+    const threshold = 10 * 1024; // 10KB
+
+    if (sizeInBytes > threshold) {
+      // Estimate tokens (roughly 4 chars per token)
+      const estimatedTokens = Math.ceil(sizeInBytes / 4);
+      // Processing rate: 40 tokens/s
+      const estimatedSeconds = Math.ceil(estimatedTokens / 40);
+      const estimatedMinutes = Math.floor(estimatedSeconds / 60);
+      const remainingSeconds = estimatedSeconds % 60;
+
+      const timeStr = estimatedMinutes > 0
+        ? `${estimatedMinutes}m ${remainingSeconds}s`
+        : `${estimatedSeconds}s`;
+      const sizeKB = Math.round(sizeInBytes / 1024);
+
+      warningTextEl.innerHTML = `<strong>Large file (${sizeKB}KB)</strong> — Estimated evaluation time: <strong>${timeStr}</strong>. Larger files may take longer to process.`;
+      warningEl.classList.remove('d-none');
+    } else {
+      warningEl.classList.add('d-none');
+    }
   }
 
   /**
@@ -710,6 +742,7 @@
       info.classList.remove('d-none');
       nameSpan.innerHTML = `Example DMP <small class="text-muted">(${window.FileParser.formatFileSize(blob.size)})</small> <span class="badge bg-info">Alpine Biodiversity</span>`;
 
+      checkDMPSizeWarning(blob.size);
       updateEvaluateButtonState();
       console.log('[App] Example DMP loaded');
     });
@@ -797,6 +830,7 @@
       info.classList.remove('d-none');
       nameSpan.textContent = `Pasted Text (${window.FileParser.formatFileSize(blob.size)})`;
 
+      checkDMPSizeWarning(blob.size);
       updateEvaluateButtonState();
 
       // Close modal
@@ -815,9 +849,42 @@
   }
 
   /**
-   * Setup export listeners
+   * Setup export and load listeners
    */
   function setupExportListeners() {
+    // Load JSON from header menu
+    const loadMenuItem = document.getElementById('loadResultsMenuItem');
+    const loadInput = document.getElementById('loadJsonInput');
+
+    if (!loadMenuItem || !loadInput) {
+      console.warn('[App] Load menu item or input not found');
+      return;
+    }
+
+    loadMenuItem.addEventListener('click', (e) => {
+      e.preventDefault();
+      loadInput.click();
+    });
+
+    loadInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target.result);
+          loadEvaluationResults(data);
+        } catch (err) {
+          console.error('[App] Failed to parse JSON:', err);
+          showError('Failed to parse JSON file: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+      // Reset input so same file can be loaded again
+      loadInput.value = '';
+    });
+
     document.getElementById('exportJsonBtn').addEventListener('click', () => {
       if (state.evaluationResults) {
         window.ExportService.exportAsJSON(state.evaluationResults);
@@ -829,6 +896,32 @@
         window.ExportService.exportAsMarkdown(state.evaluationResults);
       }
     });
+  }
+
+  /**
+   * Load evaluation results from exported JSON
+   */
+  function loadEvaluationResults(data) {
+    console.log('[App] Loading evaluation results:', data);
+
+    // Handle both full export format and results-only format
+    const results = data.results || data;
+
+    if (!results.overallScore && !results.categories && !results.sentenceEvaluations) {
+      showError('Invalid evaluation JSON format - missing required fields');
+      return;
+    }
+
+    // Store in state
+    state.evaluationResults = data;
+
+    // Display results
+    displayResults(results);
+
+    // Show success status
+    showStatus('complete');
+
+    console.log('[App] Successfully loaded evaluation from file');
   }
 
   /**
@@ -861,6 +954,93 @@
     // Show/hide based on profile requirement
     if (apiKeySection) {
       apiKeySection.style.display = needsAPIKey ? 'block' : 'none';
+    }
+  }
+
+  /**
+   * Update model selection visibility based on active profile
+   * DataPLANT profile always uses Qwen3 235B Instruct
+   * Together.ai profile shows Together models only
+   * LM Studio profile shows LM Studio models only
+   */
+  function updateModelSelectionVisibility() {
+    const activeProfileId = window.APIConfig.getActiveProfileId();
+    const modelSection = document.getElementById('modelSelectionSection');
+    const dataplanNote = document.getElementById('dataplanModelNote');
+    const modelSelect = document.getElementById('togetherAIModel');
+    const togetherGroup = document.getElementById('togetherModels');
+    const lmstudioGroup = document.getElementById('lmstudioModels');
+
+    if (activeProfileId === 'dataplan') {
+      // Hide model selection for dataplan - fixed model
+      if (modelSection) {
+        modelSection.style.display = 'none';
+      }
+      if (dataplanNote) {
+        dataplanNote.style.display = 'block';
+      }
+    } else if (activeProfileId === 'together') {
+      // Show only Together.ai models
+      if (modelSection) {
+        modelSection.style.display = 'block';
+      }
+      if (dataplanNote) {
+        dataplanNote.style.display = 'none';
+      }
+      if (togetherGroup) {
+        togetherGroup.style.display = 'block';
+        togetherGroup.disabled = false;
+      }
+      if (lmstudioGroup) {
+        lmstudioGroup.style.display = 'none';
+        lmstudioGroup.disabled = true;
+      }
+      // Select first Together model if current selection is from LM Studio group
+      const currentModel = modelSelect.value;
+      const lmstudioModels = ['minimax/minimax-m2.7', 'qwen3-235b-a22b-instruct-2507-mlx', 'qwen/qwen3.5-9b'];
+      if (lmstudioModels.includes(currentModel) || currentModel.includes('mlx')) {
+        modelSelect.value = 'Qwen/Qwen3-235B-A22B-Instruct-2507-tput';
+        localStorage.setItem('togetherAIModel', modelSelect.value);
+      }
+    } else if (activeProfileId === 'lmstudio') {
+      // Show only LM Studio models
+      if (modelSection) {
+        modelSection.style.display = 'block';
+      }
+      if (dataplanNote) {
+        dataplanNote.style.display = 'none';
+      }
+      if (togetherGroup) {
+        togetherGroup.style.display = 'none';
+        togetherGroup.disabled = true;
+      }
+      if (lmstudioGroup) {
+        lmstudioGroup.style.display = 'block';
+        lmstudioGroup.disabled = false;
+      }
+      // Select first LM Studio model if current selection is from Together group
+      const currentModel = modelSelect.value;
+      const togetherModels = ['Qwen/Qwen3-235B-A22B-Instruct-2507-tput', 'deepseek-ai/DeepSeek-R1-0528-tput'];
+      if (togetherModels.includes(currentModel) || currentModel.startsWith('Qwen/') || currentModel.startsWith('deepseek-ai/')) {
+        modelSelect.value = 'minimax/minimax-m2.7';
+        localStorage.setItem('togetherAIModel', modelSelect.value);
+      }
+    } else {
+      // For other profiles (openai, custom), show all models
+      if (modelSection) {
+        modelSection.style.display = 'block';
+      }
+      if (dataplanNote) {
+        dataplanNote.style.display = 'none';
+      }
+      if (togetherGroup) {
+        togetherGroup.style.display = 'block';
+        togetherGroup.disabled = false;
+      }
+      if (lmstudioGroup) {
+        lmstudioGroup.style.display = 'block';
+        lmstudioGroup.disabled = false;
+      }
     }
   }
 
@@ -1013,77 +1193,250 @@
   }
 
   /**
-   * Update sentence-level feedback section
+   * Update sentence-level feedback — inline document annotation view
    */
   function updateSentenceFeedback(sentenceEvaluations, originalDMPText) {
     const container = document.getElementById('narrativeFeedback');
     container.innerHTML = '';
 
-    // Create header
-    const header = document.createElement('div');
-    header.className = 'feedback-header mb-3';
-    header.innerHTML = `
-      <h6><i class="fas fa-file-alt me-2"></i>DMP Document Evaluation</h6>
-      <p class="text-muted small">Click sentences to see detailed evaluation</p>
-    `;
-    container.appendChild(header);
-
-    // Check if we have sentence evaluations
     if (!sentenceEvaluations || sentenceEvaluations.length === 0) {
-      const noResults = document.createElement('div');
-      noResults.className = 'alert alert-info';
-      noResults.innerHTML = '<i class="fas fa-info-circle me-2"></i>No sentence-level evaluations available. Using legacy feedback format.';
-      container.appendChild(noResults);
+      container.innerHTML = '<div class="alert alert-info"><i class="fas fa-info-circle me-2"></i>No sentence-level evaluations available.</div>';
       return;
     }
 
-    // Build accordion cards
-    sentenceEvaluations.forEach((se, index) => {
-      const card = createSentenceCard(se, index);
-      container.appendChild(card);
+    // Score legend
+    const legend = document.createElement('div');
+    legend.className = 'eval-legend';
+    legend.innerHTML = `
+      <span class="legend-item"><span class="legend-swatch" style="background:#0a6638"></span>Excellent (90+)</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:#28a745"></span>Good (75–89)</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:#d39e00"></span>Pass (60–74)</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:#dc3545"></span>Insufficient (&lt;60)</span>
+    `;
+    container.appendChild(legend);
+
+    // If no source text, fall back to flat list of annotated spans
+    if (!originalDMPText || originalDMPText.trim().length === 0) {
+      sentenceEvaluations.forEach(se => {
+        const block = buildAnnotatedParagraph(se.sentence, [se]);
+        container.appendChild(block);
+      });
+      return;
+    }
+
+    // Split original text into paragraphs with table/bullet awareness and annotate
+    const paragraphs = splitIntoParagraphs(originalDMPText);
+    paragraphs.forEach(para => {
+      const block = buildAnnotatedParagraph(para, sentenceEvaluations);
+      container.appendChild(block);
     });
   }
 
   /**
-   * Create a sentence accordion card
+   * Split text into paragraphs with special handling for tables and bullet lists.
+   * Tables are split into rows, bullet lists into individual bullets.
    */
-  function createSentenceCard(se, index) {
-    const section = document.createElement('div');
-    const statusClass = getStatusClass(se.score);
-    const needsSuggestion = se.score < 75;
+  function splitIntoParagraphs(text) {
+    // First split by double newlines (normal paragraphs)
+    const blocks = text.split(/\n\n+/);
 
-    section.className = 'sentence-card-accordion';
-    section.innerHTML = `
-      <div class="sentence-header ${statusClass}">
-        <span class="sentence-preview">${escapeHtml(se.sentence)}</span>
-        <span class="expand-indicator"><i class="fas fa-chevron-right"></i></span>
+    const paragraphs = [];
+    for (const block of blocks) {
+      const trimmedBlock = block.trim();
+      if (trimmedBlock.length < 10) continue;
+
+      // Check if this block contains a table (markdown style with | separators)
+      if (trimmedBlock.includes('|') && /\n\|/.test(trimmedBlock)) {
+        // This is a multi-line table - split into rows
+        const lines = trimmedBlock.split('\n');
+        let inTable = false;
+        let tableStart = -1;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (line.startsWith('|') && line.endsWith('|')) {
+            if (!inTable) {
+              inTable = true;
+              tableStart = i;
+            }
+            // Add table row as a paragraph (skip separator rows like |---|---|)
+            if (!/^[\|:\-\s]+$/.test(line)) {
+              paragraphs.push(line);
+            }
+          } else if (inTable) {
+            // Table ended, reset
+            inTable = false;
+            // Add any non-table content before/after
+            if (line.length > 10) {
+              paragraphs.push(lines.slice(tableStart === 0 ? 0 : tableStart, i).join('\n'));
+            }
+          }
+        }
+      } else if (trimmedBlock.includes('\n- ') || trimmedBlock.includes('\n* ') || /^\s*[-*]\s/.test(trimmedBlock)) {
+        // Bullet list - split into individual bullets
+        const bulletPattern = /\n(?=[-*]\s)/;
+        const bullets = trimmedBlock.split(bulletPattern);
+        bullets.forEach(bullet => {
+          const cleanBullet = bullet.trim();
+          if (cleanBullet.length > 10) {
+            paragraphs.push(cleanBullet);
+          }
+        });
+      } else {
+        // Regular paragraph
+        paragraphs.push(trimmedBlock);
+      }
+    }
+
+    return paragraphs;
+  }
+
+  /**
+   * Build one annotated paragraph block (.doc-block)
+   */
+  function buildAnnotatedParagraph(paragraphText, sentenceEvaluations) {
+    const block = document.createElement('div');
+    block.className = 'doc-block';
+
+    // Detect heading lines (markdown # syntax)
+    const isHeading = /^#{1,4}\s/.test(paragraphText);
+    const textEl = document.createElement(isHeading ? 'div' : 'p');
+    textEl.className = isHeading ? 'doc-heading' : 'doc-paragraph';
+
+    const displayText = isHeading ? paragraphText.replace(/^#{1,4}\s+/, '') : paragraphText;
+
+    // Find which evaluated sentences appear in this paragraph
+    const matches = matchSentencesInText(displayText, sentenceEvaluations);
+
+    if (matches.length === 0) {
+      // No annotated sentences — plain text, preserve soft line breaks
+      displayText.split('\n').forEach((line, i, arr) => {
+        textEl.appendChild(document.createTextNode(line));
+        if (i < arr.length - 1) textEl.appendChild(document.createElement('br'));
+      });
+    } else {
+      // Build interleaved plain + annotated spans
+      let cursor = 0;
+      matches.forEach(m => {
+        if (m.start > cursor) {
+          textEl.appendChild(document.createTextNode(displayText.slice(cursor, m.start)));
+        }
+        const span = document.createElement('span');
+        span.className = 'eval-sentence ' + getStatusClass(m.se.score);
+        span.textContent = displayText.slice(m.start, m.end);
+        span.addEventListener('click', () => toggleDetailPanel(block, span, m.se));
+        textEl.appendChild(span);
+        cursor = m.end;
+      });
+      if (cursor < displayText.length) {
+        textEl.appendChild(document.createTextNode(displayText.slice(cursor)));
+      }
+    }
+
+    block.appendChild(textEl);
+
+    return block;
+  }
+
+  /**
+   * Show/hide sentence detail panel - inserted directly after the clicked span
+   */
+  function toggleDetailPanel(block, span, se) {
+    const statusClass = getStatusClass(se.score);
+    const isActive = span.classList.contains('active');
+
+    // Remove any existing detail panels in this block
+    block.querySelectorAll('.sentence-detail-panel').forEach(p => p.remove());
+
+    // Deactivate all spans in this block
+    block.querySelectorAll('.eval-sentence').forEach(s => s.classList.remove('active'));
+
+    if (isActive) {
+      // Toggle off - panel already removed
+      return;
+    }
+
+    // Activate this span
+    span.classList.add('active');
+
+    // Create and insert panel directly after the clicked span
+    const panel = document.createElement('div');
+    const criteriaHtml = se.criteriaIds.map(cid => `<span class="criteria-tag">${cid}</span>`).join('');
+    const suggestionHtml = se.suggestion && se.score < 75
+      ? `<div class="detail-suggestion"><i class="fas fa-lightbulb text-warning me-1"></i><strong>Suggestion:</strong> ${escapeHtml(se.suggestion)}</div>`
+      : '';
+
+    panel.className = `sentence-detail-panel ${statusClass}`;
+    panel.innerHTML = `
+      <div class="detail-meta">
+        <div class="criteria-tags">${criteriaHtml}</div>
+        <span class="score-badge score-${statusClass} ms-1">${se.score}/100</span>
       </div>
-      <div class="sentence-body">
-        <div class="sentence-meta">
-          <div class="criteria-tags">
-            ${se.criteriaIds.map(cid => `<span class="criteria-tag">${cid}</span>`).join('')}
-          </div>
-          <div class="score-display">
-            <span class="score-badge ${statusClass}">${se.score}/100</span>
-          </div>
-        </div>
-        <div class="explanation">${escapeHtml(se.explanation)}</div>
-        ${needsSuggestion && se.suggestion ? `
-          <div class="improvement-suggestion">
-            <i class="fas fa-lightbulb text-warning me-2"></i>
-            <strong>Suggestion:</strong> ${escapeHtml(se.suggestion)}
-          </div>
-        ` : ''}
-      </div>
+      <div class="detail-explanation">${escapeHtml(se.explanation)}</div>
+      ${suggestionHtml}
     `;
 
-    // Click handler
-    const headerEl = section.querySelector('.sentence-header');
-    headerEl.addEventListener('click', () => {
-      section.classList.toggle('expanded');
+    // Insert panel directly after the span
+    span.insertAdjacentElement('afterend', panel);
+  }
+
+  /**
+   * Match evaluated paragraphs/sentences to positions in paragraph text.
+   * Uses fuzzy matching for table rows and handles variations.
+   * Returns sorted array of {start, end, se} with no overlaps.
+   */
+  function matchSentencesInText(text, sentenceEvaluations) {
+    const matches = [];
+    sentenceEvaluations.forEach(se => {
+      const needle = typeof se.sentence === 'string' ? se.sentence.trim() : '';
+      if (!needle || needle.length < 10) return;
+
+      // Try exact match first
+      let idx = text.indexOf(needle);
+
+      // If no exact match, try fuzzy (first 50 chars)
+      if (idx === -1 && needle.length > 50) {
+        const prefix = needle.slice(0, 50);
+        idx = text.indexOf(prefix);
+      }
+
+      // If still no match, try matching by key content words (for tables)
+      if (idx === -1 && needle.includes('|')) {
+        // Table row: try matching by cell values
+        const cells = needle.split('|').filter(c => c.trim().length > 3);
+        for (const cell of cells) {
+          const cellText = cell.trim();
+          idx = text.indexOf(cellText);
+          if (idx !== -1) break;
+        }
+      }
+
+      // If still no match, try last 50 chars (for truncated matches)
+      if (idx === -1 && needle.length > 50) {
+        const suffix = needle.slice(-50);
+        idx = text.indexOf(suffix);
+        if (idx !== -1) {
+          idx = idx - (needle.length - 50); // Adjust to start position
+          if (idx < 0) idx = 0;
+        }
+      }
+
+      if (idx !== -1) {
+        matches.push({ start: idx, end: idx + needle.length, se });
+      }
     });
 
-    return section;
+    // Sort by position, remove overlaps
+    matches.sort((a, b) => a.start - b.start);
+    const deduped = [];
+    let lastEnd = 0;
+    matches.forEach(m => {
+      if (m.start >= lastEnd) {
+        deduped.push(m);
+        lastEnd = m.end;
+      }
+    });
+    return deduped;
   }
 
   /**
@@ -1094,16 +1447,6 @@
     if (score >= 75) return 'good';
     if (score >= 60) return 'pass';
     return 'insufficient';
-  }
-
-  /**
-   * Get status color based on score
-   */
-  function getStatusColorByScore(score) {
-    if (score >= 90) return '#0a6638';
-    if (score >= 75) return '#28a745';
-    if (score >= 60) return '#ffc107';
-    return '#dc3545';
   }
 
   /**

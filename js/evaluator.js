@@ -116,15 +116,30 @@
       originalDMPText: originalDMPText
     };
 
-    // Process sentence evaluations
+    // Process sentence evaluations - validate criteriaIds against valid list
+    const validCriteriaIds = criteria && criteria.categories
+      ? criteria.categories.map(c => c.id.toLowerCase())
+      : [];
+
     if (expandedResults.sentenceEvaluations && Array.isArray(expandedResults.sentenceEvaluations)) {
-      processed.sentenceEvaluations = expandedResults.sentenceEvaluations.map(se => ({
-        sentence: se.sentence || '',
-        criteriaIds: se.criteriaIds || [],
-        score: Math.min(100, Math.max(0, se.score || 0)),
-        explanation: se.explanation || 'No explanation provided',
-        suggestion: se.suggestion || null
-      }));
+      processed.sentenceEvaluations = expandedResults.sentenceEvaluations.map(se => {
+        // Filter criteriaIds to only valid ones
+        const filteredIds = (se.criteriaIds || [])
+          .map(id => typeof id === 'string' ? id.toLowerCase() : String(id).toLowerCase())
+          .filter(id => validCriteriaIds.includes(id));
+
+        if (filteredIds.length === 0 && (se.criteriaIds || []).length > 0) {
+          console.warn('[Evaluator] Invalid criteria IDs removed:', se.criteriaIds, 'for sentence:', se.sentence?.substring(0, 50));
+        }
+
+        return {
+          sentence: se.sentence || '',
+          criteriaIds: filteredIds,
+          score: Math.min(100, Math.max(0, se.score || 0)),
+          explanation: se.explanation || 'No explanation provided',
+          suggestion: se.suggestion || null
+        };
+      });
     }
 
     // Calculate category scores from sentence evaluations
@@ -195,6 +210,35 @@
    * @param {Object|Array} compact - Compact format results
    * @returns {Object} - Expanded results
    */
+  function toStr(v) { return (v == null || Array.isArray(v)) ? '' : String(v); }
+
+  /**
+   * Normalize criteriaIds from any model output format to a clean string array.
+   * Handles: array, plain string "1a", bracket-string "[1a,2b]" (Qwen-family models)
+   */
+  function parseCriteriaIds(raw) {
+    if (Array.isArray(raw)) return raw.map(id => typeof id === 'string' ? id : String(id));
+    if (typeof raw !== 'string' || !raw.trim()) return [];
+    // Handle "[1a,2b]" bracket-string format (e.g. Qwen3.5-9B output)
+    const inner = raw.trim().replace(/^\[|\]$/g, '');
+    return inner.split(',').map(id => id.trim()).filter(Boolean);
+  }
+
+  /**
+   * Extract sentence text from various model output formats.
+   * Handles: plain string, single-element array [["text"]] (Qwen3.5-9B output), nested arrays
+   */
+  function extractSentence(raw) {
+    if (typeof raw === 'string') return raw;
+    if (Array.isArray(raw) && raw.length === 1) {
+      const inner = raw[0];
+      if (typeof inner === 'string') return inner;
+      // Handle doubly-nested [["text"]]
+      if (Array.isArray(inner) && inner.length === 1 && typeof inner[0] === 'string') return inner[0];
+    }
+    return toStr(raw);
+  }
+
   function expandCompactFormat(compact) {
     // Handle Ministral format: array at top level with nested s/score/explanation
     if (Array.isArray(compact)) {
@@ -204,14 +248,11 @@
       compact.forEach(item => {
         if (item.s && Array.isArray(item.s)) {
           item.s.forEach(sItem => {
-            // sItem can be ["sentence", [criteriaIds]] or ["sentence", criteriaId]
             const sentence = Array.isArray(sItem) ? sItem[0] : sItem;
-            const criteriaIds = Array.isArray(sItem) && Array.isArray(sItem[1])
-              ? sItem[1].map(id => typeof id === 'string' ? id : String(id))
-              : (Array.isArray(sItem) && sItem[1] ? [String(sItem[1])] : []);
+            const criteriaIds = Array.isArray(sItem) ? parseCriteriaIds(sItem[1]) : [];
 
             sentenceEvaluations.push({
-              sentence: sentence || '',
+              sentence: toStr(sentence),
               criteriaIds: criteriaIds,
               score: typeof item.score === 'number' ? item.score : 0,
               explanation: item.explanation || 'No explanation provided',
@@ -228,70 +269,59 @@
       };
     }
 
-    // Handle new compact format (s for sentences only)
-    if (compact.s && Array.isArray(compact.s)) {
-      console.log('[Evaluator] Detected compact format, expanding...');
+    // Handle new compact format (p for paragraphs, s for sentences - backward compatible)
+    if ((compact.p && Array.isArray(compact.p)) || (compact.s && Array.isArray(compact.s))) {
+      // Use 'p' if available (paragraph-level), fall back to 's' (sentence-level)
+      const hasParagraphs = compact.p && Array.isArray(compact.p);
+      const keyUsed = hasParagraphs ? 'p' : 's';
+      const sourceArray = hasParagraphs ? compact.p : compact.s;
+
+      console.log(`[Evaluator] Detected ${hasParagraphs ? 'paragraph' : 'sentence'} format (key: ${keyUsed}), expanding...`);
+
+      // Unwrap extra nesting level produced by Qwen-family models:
+      // {"p":[[[eval1],[eval2],...]]} → {"p":[[eval1],[eval2],...]}   (compact array entries)
+      // {"p":[[{obj1},{obj2},...}]]}  → {"p":[{obj1},{obj2},...]}    (object entries)
+      let items = sourceArray;
+      if (items.length === 1 && Array.isArray(items[0])) {
+        const firstInner = items[0][0];
+        if (Array.isArray(firstInner) || (firstInner !== null && typeof firstInner === 'object')) {
+          console.log('[Evaluator] Unwrapping extra nesting level');
+          items = items[0];
+        }
+      }
 
       // Check if first item is an object (object format from smaller models)
-      // or an array (compact format from larger models)
-      const firstItem = compact.s[0];
+      const firstItem = items[0];
       if (firstItem && typeof firstItem === 'object' && !Array.isArray(firstItem)) {
-        // Object format - already has named properties
         console.log('[Evaluator] Detected object format (from smaller model), normalizing...');
         return {
-          sentenceEvaluations: compact.s.map(item => {
-            // Normalize criteriaIds to array (handle single string like "1a" -> ["1a"])
-            let criteriaIds = item.criteriaIds;
-            if (typeof criteriaIds === 'string') {
-              criteriaIds = [criteriaIds];
-            } else if (!Array.isArray(criteriaIds)) {
-              criteriaIds = [];
-            }
-            return {
-              sentence: item.sentence || '',
-              criteriaIds: criteriaIds,
-              score: typeof item.score === 'number' ? item.score : 0,
-              explanation: item.explanation || 'No explanation provided',
-              suggestion: item.suggestion || null
-            };
-          }),
+          sentenceEvaluations: items.map(item => ({
+            sentence: extractSentence(item.sentence || item.paragraph || item.text),
+            criteriaIds: parseCriteriaIds(item.criteriaIds),
+            score: typeof item.score === 'number' ? item.score : 0,
+            explanation: item.explanation || 'No explanation provided',
+            suggestion: item.suggestion || null
+          })),
           categories: compact.c ? compact.c.map(item => ({
-            id: item[0],
-            name: item[1],
-            score: item[2],
-            status: expandStatus(item[3]),
-            feedback: item[4],
-            suggestion: item[5] || null
+            id: item[0], name: item[1], score: item[2],
+            status: expandStatus(item[3]), feedback: item[4], suggestion: item[5] || null
           })) : [],
           overallScore: 0
         };
       }
 
-      // Compact array format
+      // Compact array format (paragraph or sentence)
       return {
-        sentenceEvaluations: compact.s.map(item => {
-          // Normalize criteriaIds to array (handle single string like "1a" -> ["1a"])
-          let criteriaIds = item[1];
-          if (typeof criteriaIds === 'string') {
-            criteriaIds = [criteriaIds];
-          } else if (!Array.isArray(criteriaIds)) {
-            criteriaIds = [];
-          }
-          return {
-            sentence: item[0],
-            criteriaIds: criteriaIds,
-            score: item[2],
-            explanation: item[3],
-            suggestion: item[4] || null
-          };
-        }),
-        categories: compact.c ? compact.c.map(item => ({
-          id: item[0],
-          name: item[1],
+        sentenceEvaluations: items.map(item => ({
+          sentence: extractSentence(item[0]),
+          criteriaIds: parseCriteriaIds(item[1]),
           score: item[2],
-          status: expandStatus(item[3]),
-          feedback: item[4],
-          suggestion: item[5] || null
+          explanation: item[3],
+          suggestion: item[4] || null
+        })),
+        categories: compact.c ? compact.c.map(item => ({
+          id: item[0], name: item[1], score: item[2],
+          status: expandStatus(item[3]), feedback: item[4], suggestion: item[5] || null
         })) : [],
         overallScore: 0
       };

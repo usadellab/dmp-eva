@@ -6,29 +6,29 @@
 (function(window) {
   'use strict';
 
-  const DEFAULT_MODEL = 'Qwen/Qwen3-235B-A22B-Instruct';
+  const DEFAULT_MODEL = 'minimax/minimax-m2.7';
 
   // Default prompt sections for DMP evaluation
   const DEFAULT_PROMPT = {
-    systemRole: `DMP evaluator for {phase} phase.
+    systemRole: '',  // Empty - use single message format
 
-Score: 90-100=e (excellent), 75-89=g (good), 60-74=p (pass), 0-59=i (insufficient).
+    criteriaContext: '',
 
-Return compact JSON:
-{"s":[[sentence,[criteriaIds],score,explanation,suggestion?]]}
+    dmpContext: `Analyze DMP paragraph by paragraph. For each meaningful paragraph:
+1. Copy paragraph text VERBATIM (include table rows, bullet points as single units)
+2. Table rows: include entire row like "| Data | FASTQ | 100GB |"
+3. Bullet items: include single bullet point as one evaluation unit
+4. Pick 1-5 relevant criteria IDs from ONLY this list: {criteriaList}
+   - DO NOT invent new IDs like 7a, 8a, etc.
+   - DO NOT use IDs not in the list above
+5. Score 0-100 (90-100 excellent, 75-89 good, 60-74 pass, 0-59 insufficient)
 
-Rules:
-1. Evaluate each meaningful DMP sentence
-2. criteriaIds: relevant IDs (1a,1b,2a,etc)
-3. Add suggestion only if score<75`,
+Output JSON format: {"p":[[paragraphText,["criteriaIds"],score,explanation]]}
 
-    criteriaContext: `Criteria:
-{criteriaText}`,
-
-    dmpContext: `DMP:
+DMP (paragraphs separated by blank lines):
 {dmpText}
 
-Evaluate. Return compact JSON.`
+Process ALL paragraphs. JSON output only.`
   };
 
   /**
@@ -72,20 +72,45 @@ Evaluate. Return compact JSON.`
    * @returns {Object} - {systemPrompt, userPrompt}
    */
   function assembleFullPrompt(sections, criteriaText, dmpText, phase) {
-    const phaseName = phase === 'proposal' ? 'proposal/early' : phase === 'mid' ? 'mid-project' : 'end-project';
+    // Extract criteria IDs from criteriaText (handles various formats)
+    const criteriaIds = [];
+    const lines = criteriaText.split('\n');
+    for (const line of lines) {
+      const match = line.match(/^(\d+[a-z])/i);
+      if (match) criteriaIds.push(match[1].toLowerCase());
+    }
+    const criteriaList = criteriaIds.length > 0 ? criteriaIds.join(' ') : '1a 1b 2a 2b 3a 3b 4a 4b 4c 5a 5b 5c 6a 6b';
+
+    // Clean DMP text - replace all problematic quotes (regular and Unicode curly)
+    const dmpClean = dmpText
+      .replace(/"/g, "'")       // Regular double quotes
+      .replace(/'/g, "'")       // Unicode left single quote (U+2018)
+      .replace(/'/g, "'")       // Unicode right single quote (U+2019)
+      .replace(/"/g, '"')       // Unicode left double quote (U+201C)
+      .replace(/"/g, '"');      // Unicode right double quote (U+201D)
+
+    // Single message format (works better with smaller models)
+    const userPrompt = sections.dmpContext
+      .replace('{criteriaList}', criteriaList)
+      .replace('{dmpText}', dmpClean);
 
     return {
-      systemPrompt: sections.systemRole.replace('{phase}', phaseName),
-      userPrompt: sections.criteriaContext.replace('{criteriaText}', criteriaText) + '\n\n' +
-                  sections.dmpContext.replace('{dmpText}', dmpText)
+      systemPrompt: sections.systemRole || '',
+      userPrompt: userPrompt
     };
   }
 
   /**
    * Get the currently selected LLM model from localStorage
+   * For dataplan profile, always returns Qwen3 235B Instruct
    * @returns {string} - Model identifier
    */
   function getSelectedModel() {
+    // Check if dataplan profile is active - always use Qwen3 235B
+    const activeProfileId = window.localStorage.getItem('apiActiveProfile') || 'dataplan';
+    if (activeProfileId === 'dataplan') {
+      return 'Qwen/Qwen3-235B-A22B-Instruct-2507-tput';
+    }
     return window.localStorage.getItem('togetherAIModel') || DEFAULT_MODEL;
   }
 
@@ -109,7 +134,7 @@ Evaluate. Return compact JSON.`
    * Test data for DMP evaluation (compact format) - Updated for sentence-level evaluation
    */
   const TEST_EVALUATION_DATA = {
-    s: [
+    p: [
       ["This project will generate genomic data from RNA sequencing of alpine plant species.", ["1a"], 85, "Clearly describes data type and subject."],
       ["We will collect new observational data on alpine plant species diversity through field surveys across 50 sites.", ["1a", "1b"], 90, "Excellent detail on methods and scope."],
       ["Field observations will be stored in CSV format, approximately 10,000 records per year.", ["1b"], 80, "Good format specification."],
@@ -214,6 +239,14 @@ Evaluate. Return compact JSON.`
       console.warn('[JSON Repair] Last 200 chars:', jsonStr.substring(jsonStr.length - 200));
 
       let repaired = jsonStr.trim();
+
+      // Remove control characters (newlines, tabs inside strings can break JSON)
+      repaired = repaired.replace(/[\x00-\x1f]/g, (char) => {
+        if (char === '\n') return '\\n';
+        if (char === '\r') return '\\r';
+        if (char === '\t') return '\\t';
+        return '';
+      });
 
       // Remove markdown code blocks if present
       repaired = repaired.replace(/```json\s*/g, '').replace(/```\s*/g, '');
@@ -435,7 +468,7 @@ Evaluate. Return compact JSON.`
       }
     ];
 
-    // Generate fetch configuration from profile
+    // Generate fetch configuration from profile (built once, reused on retries)
     const fetchConfig = window.APIConfig.generateFetchConfig(
       activeProfile,
       apiKey,
@@ -443,72 +476,75 @@ Evaluate. Return compact JSON.`
       messages
     );
 
-    // Make API call with retry logic
-    const response = await retryWithBackoff(async () => {
-      return fetch(fetchConfig.url, fetchConfig.options);
-    });
+    const MAX_JSON_RETRIES = 1;
+    for (let attempt = 1; attempt <= MAX_JSON_RETRIES; attempt++) {
+      if (onProgress) {
+        onProgress({ type: 'status', content: `Calling ${model}${attempt > 1 ? ` (attempt ${attempt}/${MAX_JSON_RETRIES})` : ''}...` });
+      }
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(`API Error ${response.status}: ${errorData.error?.message || 'Unknown error'}`);
-    }
-
-    // Check if response is streaming
-    const contentType = response.headers.get('content-type');
-    const isStreaming = contentType && contentType.includes('text/event-stream');
-
-    let content;
-
-    if (isStreaming) {
-      console.log('[LLM] Streaming response detected');
-
-      // Handle streaming response
-      content = await parseSSEStream(response.body, (chunk, isReasoning) => {
-        if (onProgress) {
-          // Pass streaming chunks to progress callback
-          // Format: {type: 'stream', content: string, isReasoning: boolean}
-          onProgress({
-            type: 'stream',
-            content: chunk,
-            isReasoning: isReasoning
-          });
-        }
+      // Make API call with HTTP-level retry logic
+      const response = await retryWithBackoff(async () => {
+        return fetch(fetchConfig.url, fetchConfig.options);
       });
 
-      if (onProgress) {
-        onProgress({ type: 'status', content: 'Processing complete response...' });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`API Error ${response.status}: ${errorData.error?.message || 'Unknown error'}`);
       }
 
-    } else {
-      // Handle standard JSON response (fallback)
-      console.log('[LLM] Standard JSON response');
-      const data = await response.json();
+      // Check if response is streaming
+      const contentType = response.headers.get('content-type');
+      const isStreaming = contentType && contentType.includes('text/event-stream');
 
-      if (onProgress) {
-        onProgress({ type: 'status', content: 'Parsing response...' });
+      let content;
+
+      if (isStreaming) {
+        console.log('[LLM] Streaming response detected');
+        content = await parseSSEStream(response.body, (chunk, isReasoning) => {
+          if (onProgress) {
+            onProgress({ type: 'stream', content: chunk, isReasoning: isReasoning });
+          }
+        });
+        if (onProgress) {
+          onProgress({ type: 'status', content: 'Processing complete response...' });
+        }
+      } else {
+        console.log('[LLM] Standard JSON response');
+        const data = await response.json();
+        if (onProgress) {
+          onProgress({ type: 'status', content: 'Parsing response...' });
+        }
+        // Handle reasoning models (minimax, glm) that use reasoning_content field
+        const msg = data.choices[0]?.message;
+        content = msg?.content || msg?.reasoning_content || '';
+
+        // Log which field was used
+        if (!msg?.content && msg?.reasoning_content) {
+          console.log('[LLM] Using reasoning_content field (reasoning model)');
+        }
       }
 
-      // Extract content from response
-      content = data.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('No content in API response');
+      }
+
+      console.log(`[LLM] Response received (attempt ${attempt}), parsing JSON...`);
+
+      const result = repairJSON(content);
+      if (result) {
+        if (onProgress) {
+          onProgress({ type: 'complete', content: 'Evaluation complete!' });
+        }
+        return result;
+      }
+
+      console.warn(`[LLM] JSON parse failed on attempt ${attempt}/${MAX_JSON_RETRIES}`);
+      if (attempt < MAX_JSON_RETRIES) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
 
-    if (!content) {
-      throw new Error('No content in API response');
-    }
-
-    console.log('[LLM] Response received, parsing JSON...');
-
-    // Try to parse JSON response
-    const result = repairJSON(content);
-    if (!result) {
-      throw new Error('Failed to parse evaluation results as JSON');
-    }
-
-    if (onProgress) {
-      onProgress({ type: 'complete', content: 'Evaluation complete!' });
-    }
-
-    return result;
+    throw new Error(`Failed to parse evaluation results as JSON after ${MAX_JSON_RETRIES} attempts`);
   }
 
   /**

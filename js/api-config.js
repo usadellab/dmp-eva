@@ -94,7 +94,7 @@
       modelParamName: 'model',
       messagesParamName: 'messages',
       temperature: 0.3,
-      maxTokens: 8000,
+      maxTokens: 16000,
       responseFormat: null,  // LM Studio doesn't support response_format
       streamEnabled: true
     }
@@ -271,6 +271,11 @@
       [profile.modelParamName]: model,
       [profile.messagesParamName]: messages
     };
+
+    // Add max tokens if specified
+    if (profile.maxTokens) {
+      body.max_tokens = profile.maxTokens;
+    }
 
     // Add response format if specified
     if (profile.responseFormat === 'json_object') {

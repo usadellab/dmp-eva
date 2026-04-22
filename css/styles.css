@@ -296,12 +296,6 @@ small, .small {
     box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
 }
 
-/* Custom scrollbar for narrative sections */
-#narrativeFeedback {
-    max-height: 600px;
-    overflow-y: auto;
-}
-
 #narrativeFeedback::-webkit-scrollbar {
     width: 8px;
 }
@@ -620,68 +614,6 @@ small, .small {
    SENTENCE EVALUATION CARDS
    ====================================== */
 
-/* Sentence Evaluation Cards */
-.sentence-evaluation-card {
-    background: #fff;
-    border: 1px solid #e9ecef;
-    border-radius: 8px;
-    padding: 1rem;
-    margin-bottom: 1rem;
-    transition: box-shadow 0.2s;
-}
-
-.sentence-evaluation-card:hover {
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.sentence-text {
-    font-size: 1rem;
-    line-height: 1.6;
-    padding: 0.75rem;
-    border-radius: 4px;
-    margin-bottom: 0.75rem;
-    border-left: 4px solid #6c757d;
-    background-color: #f8f9fa;
-}
-
-.sentence-text.excellent {
-    border-left-color: #0a6638;
-    background-color: #d1f4e0;
-}
-
-.sentence-text.good {
-    border-left-color: #28a745;
-    background-color: #d4edda;
-}
-
-.sentence-text.pass {
-    border-left-color: #ffc107;
-    background-color: #fff3cd;
-}
-
-.sentence-text.insufficient {
-    border-left-color: #dc3545;
-    background-color: #f8d7da;
-}
-
-.sentence-number {
-    display: inline-block;
-    background: #6c757d;
-    color: white;
-    font-size: 0.75rem;
-    padding: 0.1rem 0.4rem;
-    border-radius: 4px;
-    margin-right: 0.5rem;
-    font-weight: 600;
-}
-
-.sentence-meta {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-}
-
 .criteria-tags {
     display: flex;
     gap: 0.25rem;
@@ -705,19 +637,6 @@ small, .small {
     cursor: default;
 }
 
-.sentence-score {
-    font-size: 1rem;
-}
-
-.sentence-explanation {
-    font-size: 0.875rem;
-    color: #6c757d;
-    font-style: italic;
-    padding-top: 0.5rem;
-    border-top: 1px dashed #e9ecef;
-    line-height: 1.5;
-}
-
 /* Feedback header */
 .feedback-header h6 {
     color: #212529;
@@ -725,120 +644,127 @@ small, .small {
     margin-bottom: 0.25rem;
 }
 
-/* Adjust narrative feedback container for sentence cards */
-#narrativeFeedback {
-    max-height: 800px;
-    overflow-y: auto;
-}
-
 /* ======================================
-   ACCORDION SENTENCE CARDS
+   INLINE DOCUMENT ANNOTATION VIEW
    ====================================== */
 
-.sentence-card-accordion {
-    background: #fff;
-    border-radius: 8px;
-    margin-bottom: 0.75rem;
-    overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    transition: box-shadow 0.2s ease;
-}
-
-.sentence-card-accordion:hover {
-    box-shadow: 0 3px 10px rgba(0,0,0,0.12);
-}
-
-.sentence-header {
-    padding: 1rem 1.25rem;
-    cursor: pointer;
+/* Score legend row */
+.eval-legend {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-left: 4px solid #6c757d;
-    transition: background-color 0.2s ease;
-    user-select: none;
-}
-
-.sentence-header.excellent {
-    border-left-color: #0a6638;
-    background: linear-gradient(90deg, #d1f4e0 0%, #fff 20%);
-}
-
-.sentence-header.good {
-    border-left-color: #28a745;
-    background: linear-gradient(90deg, #d4edda 0%, #fff 20%);
-}
-
-.sentence-header.pass {
-    border-left-color: #ffc107;
-    background: linear-gradient(90deg, #fff3cd 0%, #fff 20%);
-}
-
-.sentence-header.insufficient {
-    border-left-color: #dc3545;
-    background: linear-gradient(90deg, #f8d7da 0%, #fff 20%);
-}
-
-.sentence-header:hover {
-    filter: brightness(0.98);
-}
-
-.sentence-preview {
-    flex: 1;
-    font-size: 0.95rem;
-    line-height: 1.5;
-    color: #333;
-}
-
-.expand-indicator {
-    color: #adb5bd;
-    transition: transform 0.2s ease;
-    margin-left: 1rem;
-}
-
-.sentence-card-accordion.expanded .expand-indicator {
-    transform: rotate(90deg);
-    color: #4fb3d9;
-}
-
-.sentence-body {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease, padding 0.3s ease;
-    background-color: #fafbfc;
-    border-top: 1px solid transparent;
-}
-
-.sentence-card-accordion.expanded .sentence-body {
-    max-height: 500px;
-    padding: 1rem 1.25rem;
-    border-top-color: #e9ecef;
-}
-
-.sentence-meta {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.75rem;
-}
-
-.score-display {
-    flex-shrink: 0;
-}
-
-.explanation {
-    font-size: 0.875rem;
+    gap: 1rem;
+    font-size: 0.8rem;
+    margin-bottom: 0.9rem;
+    flex-wrap: wrap;
     color: #6c757d;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.legend-swatch {
+    width: 22px;
+    height: 3px;
+    border-radius: 2px;
+    display: inline-block;
+}
+
+/* One paragraph block + its detail panel */
+.doc-block {
+    margin-bottom: 1.1rem;
+}
+
+.doc-heading {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #343a40;
+    margin-bottom: 0.2rem;
+    margin-top: 0.5rem;
+}
+
+.doc-paragraph {
+    font-size: 0.925rem;
+    line-height: 1.85;
+    color: #212529;
+    margin-bottom: 0.2rem;
+}
+
+/* Inline evaluated sentence */
+.eval-sentence {
+    border-bottom: 2px solid transparent;
+    padding-bottom: 1px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.eval-sentence:hover {
+    opacity: 0.8;
+}
+
+.eval-sentence.active {
+    outline: 1px dashed currentColor;
+    outline-offset: 1px;
+    border-radius: 3px;
+}
+
+.eval-sentence.excellent {
+    border-bottom-color: #0a6638;
+    background-color: rgba(209, 244, 224, 0.4);
+}
+
+.eval-sentence.good {
+    border-bottom-color: #28a745;
+    background-color: rgba(212, 237, 218, 0.35);
+}
+
+.eval-sentence.pass {
+    border-bottom-color: #d39e00;
+    background-color: rgba(255, 243, 205, 0.45);
+}
+
+.eval-sentence.insufficient {
+    border-bottom-color: #dc3545;
+    background-color: rgba(248, 215, 218, 0.4);
+}
+
+/* Detail panel below the paragraph */
+.sentence-detail-panel {
+    display: block;
+    font-size: 0.85rem;
+    padding: 0.55rem 0.85rem;
+    background: #f8f9fa;
+    border-left: 3px solid #6c757d;
+    border-radius: 0 4px 4px 0;
+    margin-top: 0.25rem;
+}
+
+.sentence-detail-panel.excellent { border-left-color: #0a6638; }
+.sentence-detail-panel.good      { border-left-color: #28a745; }
+.sentence-detail-panel.pass      { border-left-color: #d39e00; }
+.sentence-detail-panel.insufficient { border-left-color: #dc3545; }
+
+.detail-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.detail-explanation {
+    color: #495057;
     line-height: 1.5;
 }
 
-.improvement-suggestion {
-    margin-top: 0.75rem;
-    padding: 0.75rem 1rem;
-    background: linear-gradient(90deg, #fff8e1 0%, #fffdf5 100%);
-    border-radius: 6px;
-    border-left: 3px solid #ffc107;
-    font-size: 0.875rem;
+.detail-suggestion {
+    margin-top: 0.4rem;
+    padding: 0.35rem 0.6rem;
+    background: #fff8e1;
+    border-left: 2px solid #ffc107;
+    border-radius: 3px;
     color: #664d03;
 }
 
