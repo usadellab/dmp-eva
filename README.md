@@ -2,11 +2,11 @@
 
 An AI-powered web application for evaluating Data Management Plans (DMPs) against standardized criteria using Together.ai or compatible LLM APIs.
 
-## Video Demo
+## Video Introduction
 
-A short video walkthrough demonstrating how to use the DMP Evaluation Tool, from uploading a DMP document to reviewing the AI-generated evaluation results.
+A short video walkthrough introducing what is DMP Evaluation Criteria, and how to review DMP with the help of AI-generated evaluation results.
 
-> **Note:** The demo video will be added here via the GitHub web interface.
+https://github.com/user-attachments/assets/95ae5cb3-55f2-4126-aefa-1f4bcbcaf977
 
 ## Features
 
@@ -42,7 +42,6 @@ Available Together.ai models:
 - `Qwen/Qwen3-235B-A22B-Instruct-2507-tput` — Qwen3 235B
 - `openai/gpt-oss-20b` — GPT OSS 20B *(default)*
 - `openai/gpt-oss-120b` — GPT OSS 120B
-- `deepseek-ai/DeepSeek-R1-0528-tput` — DeepSeek R1
 
 ## Score Bands
 
