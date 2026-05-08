@@ -2,6 +2,12 @@
 
 An AI-powered web application for evaluating Data Management Plans (DMPs) against standardized criteria using Together.ai or compatible LLM APIs.
 
+## Video Demo
+
+A short video walkthrough demonstrating how to use the DMP Evaluation Tool, from uploading a DMP document to reviewing the AI-generated evaluation results.
+
+> **Note:** The demo video will be added here via the GitHub web interface.
+
 ## Features
 
 - **Sentence-level evaluation**: Each DMP sentence is scored (0–100) against relevant criteria, with explanations and improvement suggestions for scores below 75
@@ -81,6 +87,11 @@ Results can be exported as:
 │   └── export-service.js   # JSON/Markdown export
 └── css/styles.css
 ```
+
+
+## DMP evaluation community
+
+- **[DMP Evaluation](https://github.com/dmp-evaluation)** — Companion repository for DMP evaluation workflows and resources.
 
 ## Privacy
 
