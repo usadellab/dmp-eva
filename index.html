@@ -39,6 +39,11 @@
                                     <i class="fas fa-upload me-2"></i>Load Results
                                 </a>
                             </li>
+                            <li>
+                                <a class="dropdown-item" href="#" id="clearResultsMenuItem">
+                                    <i class="fas fa-trash-alt me-2"></i>Clear Results
+                                </a>
+                            </li>
                             <li><hr class="dropdown-divider"></li>
                             <li>
                                 <div class="dropdown-item-text">
@@ -153,7 +158,7 @@
                             <label class="form-label">Primary Model</label>
                             <div class="alert alert-info mb-0 py-2">
                                 <i class="fas fa-cog me-2"></i>
-                                <strong>Qwen3 235B Instruct</strong>
+                                <strong>GPT OSS 20B</strong>
                                 <small class="text-muted ms-2">(Fixed for DataPLANT profile)</small>
                             </div>
                         </div>
@@ -184,7 +189,7 @@
                                 <i class="fas fa-file-alt fa-3x mb-3 text-muted"></i>
                                 <p class="mb-2">Drag & Drop or Click to Upload</p>
                                 <small class="text-muted">Supports: .docx, .doc, .txt, .json, .md</small>
-                                <input type="file" id="criteriaFileInput" accept=".docx,.doc,.txt,.json,.md" hidden>
+                                <input type="file" id="criteriaFileInput" accept=".docx,.doc,.txt,.json,.md" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0;">
                             </div>
                             <div id="criteriaFileInfo" class="mt-2 d-none">
                                 <div class="alert alert-success mb-0">
@@ -210,7 +215,7 @@
                                 <i class="fas fa-file-alt fa-3x mb-3 text-muted"></i>
                                 <p class="mb-2">Drag & Drop or Click to Upload</p>
                                 <small class="text-muted">Supports: .docx, .doc, .txt, .json, .html</small>
-                                <input type="file" id="dmpFileInput" accept=".docx,.doc,.txt,.json,.html" hidden>
+                                <input type="file" id="dmpFileInput" accept=".docx,.doc,.txt,.json,.html" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0;">
                             </div>
                             <div id="dmpFileInfo" class="mt-2 d-none">
                                 <div class="alert alert-success mb-0">
@@ -235,9 +240,12 @@
                             </div>
                         </div>
 
-                        <!-- Evaluate Button -->
-                        <button class="btn btn-primary btn-lg w-100" id="evaluateBtn" disabled>
+                        <!-- Evaluate Buttons -->
+                        <button class="btn btn-primary btn-lg w-100 mb-2" id="evaluateBtn" disabled>
                             <i class="fas fa-play me-2"></i>Start Evaluation
+                        </button>
+                        <button class="btn btn-outline-primary btn-sm w-100" id="batchEvaluateBtn" disabled>
+                            <i class="fas fa-layer-group me-2"></i>Batch Evaluate (All Phases)
                         </button>
                     </div>
                 </div>

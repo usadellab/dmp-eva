@@ -36,6 +36,9 @@
     setupExportListeners();
     setupPromptEditorListeners();
 
+    // Restore cached results if available
+    loadResultsFromCache();
+
     // Update UI state
     updateEvaluateButtonState();
     updateAPIKeyVisibility();
@@ -111,6 +114,36 @@
     if (testModeCheckbox) {
       testModeCheckbox.checked = testMode === 'true';
     }
+  }
+
+  /**
+   * Load cached evaluation results from localStorage
+   */
+  function loadResultsFromCache() {
+    try {
+      const cached = localStorage.getItem('dmpEvaluationCache');
+      if (cached) {
+        const data = JSON.parse(cached);
+        if (data && data.success && data.results) {
+          state.evaluationResults = data;
+          displayResults(data.results);
+          showStatus('complete');
+          console.log('[App] Restored evaluation results from cache');
+        }
+      }
+    } catch (e) {
+      console.warn('[App] Failed to load cached results:', e);
+    }
+  }
+
+  /**
+   * Clear cached evaluation results
+   */
+  function clearResultsCache() {
+    localStorage.removeItem('dmpEvaluationCache');
+    state.evaluationResults = null;
+    hideResults();
+    console.log('[App] Cleared evaluation cache');
   }
 
   /**
@@ -881,6 +914,11 @@
   function setupEvaluationListeners() {
     const evaluateBtn = document.getElementById('evaluateBtn');
     evaluateBtn.addEventListener('click', startEvaluation);
+
+    const batchBtn = document.getElementById('batchEvaluateBtn');
+    if (batchBtn) {
+      batchBtn.addEventListener('click', startBatchEvaluation);
+    }
   }
 
   /**
@@ -900,6 +938,15 @@
       e.preventDefault();
       loadInput.click();
     });
+
+    // Clear results menu item
+    const clearMenuItem = document.getElementById('clearResultsMenuItem');
+    if (clearMenuItem) {
+      clearMenuItem.addEventListener('click', (e) => {
+        e.preventDefault();
+        clearResultsCache();
+      });
+    }
 
     loadInput.addEventListener('change', (e) => {
       const file = e.target.files[0];
@@ -974,6 +1021,11 @@
       (testMode || !needsAPIKey || apiKey);
 
     evaluateBtn.disabled = !canEvaluate;
+
+    const batchBtn = document.getElementById('batchEvaluateBtn');
+    if (batchBtn) {
+      batchBtn.disabled = !canEvaluate;
+    }
   }
 
   /**
@@ -994,7 +1046,7 @@
 
   /**
    * Update model selection visibility based on active profile
-   * DataPLANT profile always uses Qwen3 235B Instruct
+   * DataPLANT profile always uses GPT OSS 20B
    * Together.ai profile shows Together models only
    * LM Studio profile shows LM Studio models only
    */
@@ -1111,6 +1163,14 @@
         // Store results
         state.evaluationResults = result;
 
+        // Cache in localStorage
+        try {
+          localStorage.setItem('dmpEvaluationCache', JSON.stringify(result));
+          console.log('[App] Results cached to localStorage');
+        } catch (e) {
+          console.warn('[App] Failed to cache results:', e);
+        }
+
         // Display results
         displayResults(result.results);
 
@@ -1127,6 +1187,135 @@
     } finally {
       state.isEvaluating = false;
     }
+  }
+
+  /**
+   * Start batch evaluation across all phases
+   */
+  async function startBatchEvaluation() {
+    if (state.isEvaluating) {
+      console.warn('[App] Batch evaluation already in progress');
+      return;
+    }
+
+    const phases = [
+      { value: 'proposal_early_stage', label: 'Early Stage' },
+      { value: 'mid_project', label: 'Mid-Project' },
+      { value: 'end_project', label: 'End-Project' }
+    ];
+
+    const batchResults = [];
+    state.isEvaluating = true;
+    showStatus('processing');
+    hideResults();
+    clearStreamingDisplay();
+
+    for (const phaseInfo of phases) {
+      updateStatusMessage({ type: 'status', content: `Evaluating for ${phaseInfo.label}...` });
+      try {
+        const result = await window.Evaluator.evaluate(
+          state.criteriaFile,
+          state.dmpFile,
+          phaseInfo.value,
+          (message) => updateStatusMessage(message)
+        );
+        if (result.success) {
+          batchResults.push({ phase: phaseInfo.label, result });
+        } else {
+          batchResults.push({ phase: phaseInfo.label, error: result.error });
+        }
+      } catch (error) {
+        console.error(`[App] Batch evaluation error for ${phaseInfo.label}:`, error);
+        batchResults.push({ phase: phaseInfo.label, error: error.message });
+      }
+    }
+
+    state.isEvaluating = false;
+
+    // Store first successful result as primary
+    const firstSuccess = batchResults.find(r => r.result);
+    if (firstSuccess) {
+      state.evaluationResults = firstSuccess.result;
+      try {
+        localStorage.setItem('dmpEvaluationCache', JSON.stringify(firstSuccess.result));
+      } catch (e) {}
+    }
+
+    // Display batch comparison
+    displayBatchResults(batchResults);
+    showStatus('complete');
+  }
+
+  /**
+   * Display batch evaluation comparison
+   */
+  function displayBatchResults(batchResults) {
+    const resultsCard = document.getElementById('resultsCard');
+    resultsCard.style.display = 'block';
+    resultsCard.classList.add('fade-in');
+
+    // Build comparison table
+    let html = `<div class="mb-4"><h5 class="mb-3"><i class="fas fa-layer-group me-2"></i>Batch Evaluation Comparison</h5>`;
+    html += `<div class="table-responsive"><table class="table table-sm table-bordered">`;
+    html += `<thead class="table-light"><tr><th>Criterion</th>`;
+    batchResults.forEach(b => {
+      html += `<th>${b.phase}${b.error ? ' <span class="text-danger">(ERR)</span>' : ''}</th>`;
+    });
+    html += `</tr></thead><tbody>`;
+
+    // Get all unique criterion IDs from first successful result
+    const firstSuccess = batchResults.find(b => b.result);
+    if (firstSuccess) {
+      const categories = firstSuccess.result.results.categories;
+      categories.forEach(cat => {
+        html += `<tr><td><strong>${cat.id}</strong> ${cat.name}</td>`;
+        batchResults.forEach(b => {
+          if (b.error) {
+            html += `<td class="text-muted">—</td>`;
+          } else {
+            const match = b.result.results.categories.find(c => c.id === cat.id);
+            const score = match ? match.score : 0;
+            const badgeClass = score >= 90 ? 'bg-success' : score >= 75 ? 'bg-info' : score >= 60 ? 'bg-warning' : 'bg-danger';
+            html += `<td><span class="badge ${badgeClass}">${score}</span></td>`;
+          }
+        });
+        html += `</tr>`;
+      });
+
+      // Overall row
+      html += `<tr class="table-primary"><td><strong>Overall</strong></td>`;
+      batchResults.forEach(b => {
+        if (b.error) {
+          html += `<td class="text-danger">Error</td>`;
+        } else {
+          html += `<td><strong>${b.result.results.overallScore}%</strong></td>`;
+        }
+      });
+      html += `</tr>`;
+    }
+
+    html += `</tbody></table></div></div>`;
+
+    // Also show detailed results for the first successful evaluation
+    if (firstSuccess) {
+      html += `<hr class="my-4"><h5 class="mb-3">Detailed Results — ${firstSuccess.phase}</h5>`;
+      updateOverallScore(firstSuccess.result.results.overallScore);
+      updateScoresTable(firstSuccess.result.results.categories);
+      updateSentenceFeedback(firstSuccess.result.results.sentenceEvaluations, firstSuccess.result.results.originalDMPText);
+    }
+
+    // Inject comparison HTML before the standard results content
+    const container = document.getElementById('resultsCard');
+    const existing = container.querySelector('.batch-comparison');
+    if (existing) existing.remove();
+    const wrapper = document.createElement('div');
+    wrapper.className = 'batch-comparison';
+    wrapper.innerHTML = html;
+    container.insertBefore(wrapper, container.firstChild);
+
+    setTimeout(() => {
+      resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 300);
   }
 
   /**

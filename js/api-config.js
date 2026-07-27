@@ -52,7 +52,7 @@
       messagesParamName: 'messages',
       temperature: 0.3,
       maxTokens: 8000,
-      responseFormat: 'json_object',
+      responseFormat: null,  // gpt-oss on DataPLANT corrupts output with json_object; prompt requests JSON and parser handles it
       streamEnabled: true
     },
     together: {

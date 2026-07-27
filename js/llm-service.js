@@ -81,6 +81,14 @@ Process ALL paragraphs. JSON output only.`
     }
     const criteriaList = criteriaIds.length > 0 ? criteriaIds.join(' ') : '1a 1b 2a 2b 3a 3b 4a 4b 4c 5a 5b 5c 6a 6b';
 
+    // Phase-specific scoring instructions
+    const phaseInstructions = {
+      'proposal_early_stage': 'This is a PROPOSAL / EARLY STAGE evaluation. Score based on PLANS, INTENTIONS, and EXPECTED approaches. Plans that are concrete and well-thought-out score well. Vague or missing plans score poorly.',
+      'mid_project': 'This is a MID-PROJECT evaluation. Score based on ACTUAL PROGRESS, IMPLEMENTATION, and UPDATES to original plans. Confirm what has been done. Report deviations. Ongoing work with clear evidence scores well. Plans without progress evidence score poorly.',
+      'end_project': 'This is an END-PROJECT evaluation. Score based on FINAL OUTCOMES, COMPLETED ACTIONS, and DELIVERABLES. Only concrete completed work scores well. Plans, intentions, or ongoing work WITHOUT final delivery score VERY POORLY. Be STRICT: if the DMP describes what WILL be done rather than what HAS been done, score 0-59 (insufficient).'
+    };
+    const phaseGuide = phaseInstructions[phase] || phaseInstructions['proposal_early_stage'];
+
     // Clean DMP text - replace all problematic quotes (regular and Unicode curly)
     const dmpClean = dmpText
       .replace(/"/g, "'")       // Regular double quotes
@@ -89,10 +97,11 @@ Process ALL paragraphs. JSON output only.`
       .replace(/"/g, '"')       // Unicode left double quote (U+201C)
       .replace(/"/g, '"');      // Unicode right double quote (U+201D)
 
-    // Single message format (works better with smaller models)
+    // Build prompt with phase guidance injected
     const userPrompt = sections.dmpContext
       .replace('{criteriaList}', criteriaList)
-      .replace('{dmpText}', dmpClean);
+      .replace('{dmpText}', dmpClean)
+      + '\n\nPHASE-SPECIFIC SCORING INSTRUCTIONS:\n' + phaseGuide;
 
     return {
       systemPrompt: sections.systemRole || '',
@@ -102,14 +111,14 @@ Process ALL paragraphs. JSON output only.`
 
   /**
    * Get the currently selected LLM model from localStorage
-   * For dataplan profile, always returns Qwen3 235B Instruct
+   * For dataplan profile, always returns GPT OSS 20B
    * @returns {string} - Model identifier
    */
   function getSelectedModel() {
-    // Check if dataplan profile is active - always use Qwen3 235B
+    // Check if dataplan profile is active - always use GPT OSS 20B
     const activeProfileId = window.localStorage.getItem('apiActiveProfile') || 'dataplan';
     if (activeProfileId === 'dataplan') {
-      return 'Qwen/Qwen3-235B-A22B-Instruct-2507-tput';
+      return 'openai/gpt-oss-20b';
     }
     return window.localStorage.getItem('togetherAIModel') || DEFAULT_MODEL;
   }
