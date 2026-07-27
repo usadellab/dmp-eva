@@ -458,8 +458,25 @@ Process ALL paragraphs. JSON output only.`
     }
 
     const model = getSelectedModel();
+    const promptTokens = estimateTokens(systemPrompt + userPrompt);
     console.log(`[LLM] Evaluating DMP with model: ${model}`);
-    console.log(`[LLM] Prompt size: ~${estimateTokens(systemPrompt + userPrompt)} tokens`);
+    console.log(`[LLM] Prompt size: ~${promptTokens} tokens`);
+
+    // Input token limits (estimated at ~4 chars/token)
+    const MAX_INPUT_TOKENS = 16000;
+    const DATAPLAN_INPUT_TOKENS = 4000; // Free community server - keep it light
+    if (promptTokens > MAX_INPUT_TOKENS) {
+      throw new Error(
+        `Your input is too large (~${promptTokens.toLocaleString()} tokens; the limit is ${MAX_INPUT_TOKENS.toLocaleString()}). ` +
+        'Please shorten the document, or use a local LLM (LM Studio profile) or another API via API Config.'
+      );
+    }
+    if (window.APIConfig.getActiveProfileId() === 'dataplan' && promptTokens > DATAPLAN_INPUT_TOKENS) {
+      throw new Error(
+        `Your input is too large for the free DataPLANT community server (~${promptTokens.toLocaleString()} tokens; the limit is ${DATAPLAN_INPUT_TOKENS.toLocaleString()}). ` +
+        'Please use a local LLM (LM Studio profile) or another API (e.g. Together.ai or an OpenAI-compatible endpoint) via API Config.'
+      );
+    }
 
     if (onProgress) {
       onProgress({ type: 'status', content: `Calling ${model}...` });
