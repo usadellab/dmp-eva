@@ -12,20 +12,24 @@
     dmpFile: null,
     evaluationResults: null,
     isEvaluating: false,
-    usingDefaultCriteria: false // Track if using eva.json default
+    usingDefaultCriteria: false, // Track if using eva.json default
+    urlSources: {} // Original URLs of resources loaded via URL parameters (prompt/criteria/dmp)
   };
 
   // Initialize app when DOM is ready
   document.addEventListener('DOMContentLoaded', initializeApp);
 
-  function initializeApp() {
+  async function initializeApp() {
     console.log('[App] Initializing DMP Evaluation Tool');
 
     // Load saved settings from localStorage
     loadSettings();
 
-    // Load default criteria (eva.json)
-    loadDefaultCriteria();
+    // Load default criteria (eva.json) - awaited so URL-provided criteria can override it
+    await loadDefaultCriteria();
+
+    // Apply optional URL parameters (API settings, remote prompt/criteria/DMP links)
+    applyUrlParameters();
 
     // Setup event listeners
     setupAPIKeyListeners();
@@ -35,6 +39,7 @@
     setupEvaluationListeners();
     setupExportListeners();
     setupPromptEditorListeners();
+    setupShareLinkListener();
 
     // Restore cached results if available
     loadResultsFromCache();
@@ -91,6 +96,263 @@
     } catch (error) {
       console.warn('[App] Could not load eva.json:', error.message);
     }
+  }
+
+  /**
+   * Apply optional URL query parameters.
+   * Supported parameters:
+   *   ?profile=together                - switch the active API profile
+   *   ?endpoint=...&apikey=...&model=... - configure a custom LLM endpoint
+   *   ?prompt=<url>    - load a custom prompt template (GitHub links supported)
+   *   ?criteria=<url>  - load evaluation criteria from a URL
+   *   ?dmp=<url>       - load a DMP document from a URL
+   */
+  function applyUrlParameters() {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.toString()) return;
+
+    // --- API settings (applied synchronously) ---
+    const profile = params.get('profile');
+    const endpoint = params.get('endpoint');
+    const apikey = params.get('apikey');
+    const model = params.get('model');
+
+    if (apikey) {
+      localStorage.setItem('togetherAPIKey', apikey);
+    }
+    if (model) {
+      localStorage.setItem('togetherAIModel', model);
+    }
+
+    if (endpoint) {
+      // Create/update a custom profile pointing at the given endpoint
+      window.APIConfig.saveProfile('url-custom', {
+        name: 'URL Custom Endpoint',
+        endpoint: endpoint,
+        requiresAPIKey: !!apikey,
+        authHeaderTemplate: apikey ? 'Bearer {API_KEY}' : '',
+        additionalHeaders: { 'Content-Type': 'application/json' },
+        modelParamName: 'model',
+        messagesParamName: 'messages',
+        temperature: 0.3,
+        maxTokens: 8000,
+        responseFormat: null,
+        streamEnabled: true
+      });
+      window.APIConfig.setActiveProfileId('url-custom');
+      console.log('[App] URL parameter: custom endpoint configured');
+    } else if (profile) {
+      window.APIConfig.setActiveProfileId(profile);
+      console.log(`[App] URL parameter: active profile set to "${profile}"`);
+    }
+
+    // --- Remote resources (loaded asynchronously) ---
+    loadUrlResources(params);
+  }
+
+  /**
+   * Convert a github.com "blob" page URL to its raw content URL
+   * @param {string} url - Original URL
+   * @returns {string} - Raw content URL (or the input unchanged)
+   */
+  function toRawUrl(url) {
+    const m = url.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/);
+    return m ? `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}/${m[4]}` : url;
+  }
+
+  /**
+   * Fetch a remote file, returning a Blob, filename, and text (for text files)
+   * @param {string} url - URL to fetch (github.com blob URLs are converted)
+   * @returns {Promise<{blob: Blob, filename: string, text: string|null}>}
+   */
+  async function fetchRemoteFile(url) {
+    const rawUrl = toRawUrl(url);
+    const response = await fetch(rawUrl);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} from ${rawUrl}`);
+    }
+    const filename = rawUrl.split('/').pop().split('?')[0] || 'remote-file.txt';
+    if (/\.docx$/i.test(filename)) {
+      const buffer = await response.arrayBuffer();
+      return {
+        blob: new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }),
+        filename,
+        text: null
+      };
+    }
+    const text = await response.text();
+    const isJson = /\.json$/i.test(filename);
+    return {
+      blob: new Blob([text], { type: isJson ? 'application/json' : 'text/plain' }),
+      filename,
+      text
+    };
+  }
+
+  /**
+   * Load remote prompt / criteria / DMP resources given in URL parameters
+   * @param {URLSearchParams} params - Parsed query parameters
+   */
+  async function loadUrlResources(params) {
+    // Custom prompt template
+    const promptUrl = params.get('prompt');
+    if (promptUrl) {
+      try {
+        const { text } = await fetchRemoteFile(promptUrl);
+        let sections = null;
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed && typeof parsed === 'object' && typeof parsed.dmpContext === 'string') {
+            sections = parsed;
+          }
+        } catch { /* not JSON - treat as plain template text */ }
+        if (!sections) {
+          sections = { systemRole: '', criteriaContext: '', dmpContext: text };
+        }
+        window.LLMService.savePromptToStorage(sections);
+        state.urlSources.prompt = promptUrl;
+        console.log('[App] Custom prompt template loaded from URL');
+      } catch (error) {
+        console.error('[App] Failed to load prompt from URL:', error.message);
+        alert(`Could not load the prompt template from:\n${promptUrl}\n\n${error.message}`);
+      }
+    }
+
+    // Criteria file
+    const criteriaUrl = params.get('criteria');
+    if (criteriaUrl) {
+      try {
+        const { blob, filename } = await fetchRemoteFile(criteriaUrl);
+        state.criteriaFile = new File([blob], filename, { type: blob.type });
+        state.usingDefaultCriteria = false;
+        state.urlSources.criteria = criteriaUrl;
+
+        const zone = document.getElementById('criteriaUploadZone');
+        const info = document.getElementById('criteriaFileInfo');
+        const nameSpan = document.getElementById('criteriaFileName');
+        zone.style.display = 'none';
+        info.classList.remove('d-none');
+        nameSpan.innerHTML = `<i class="fas fa-link me-1"></i><strong>${filename}</strong> <span class="badge bg-info ms-2">From URL</span>`;
+
+        updateEvaluateButtonState();
+        console.log('[App] Criteria loaded from URL:', filename);
+      } catch (error) {
+        console.error('[App] Failed to load criteria from URL:', error.message);
+        alert(`Could not load the criteria from:\n${criteriaUrl}\n\n${error.message}`);
+      }
+    }
+
+    // DMP document
+    const dmpUrl = params.get('dmp');
+    if (dmpUrl) {
+      try {
+        const { blob, filename } = await fetchRemoteFile(dmpUrl);
+        state.dmpFile = new File([blob], filename, { type: blob.type });
+        state.urlSources.dmp = dmpUrl;
+
+        const zone = document.getElementById('dmpUploadZone');
+        const info = document.getElementById('dmpFileInfo');
+        const nameSpan = document.getElementById('dmpFileName');
+        zone.style.display = 'none';
+        info.classList.remove('d-none');
+        nameSpan.innerHTML = `<i class="fas fa-link me-1"></i><strong>${filename}</strong> <small class="text-muted">(${window.FileParser.formatFileSize(blob.size)})</small> <span class="badge bg-info ms-2">From URL</span>`;
+
+        checkDMPSizeWarning(blob.size);
+        updateEvaluateButtonState();
+        console.log('[App] DMP loaded from URL:', filename);
+      } catch (error) {
+        console.error('[App] Failed to load DMP from URL:', error.message);
+        alert(`Could not load the DMP document from:\n${dmpUrl}\n\n${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Build a shareable URL from the current settings.
+   * Includes: active profile, custom endpoint, model, and any resources
+   * that were loaded from URLs.
+   * @param {boolean} includeAPIKey - Also embed the API key (sensitive!)
+   * @returns {string} - Shareable URL
+   */
+  function buildShareLink(includeAPIKey = false) {
+    const params = new URLSearchParams();
+
+    const profileId = window.APIConfig.getActiveProfileId();
+    if (window.APIConfig.isCustomProfile(profileId)) {
+      const profile = window.APIConfig.getProfile(profileId);
+      params.set('endpoint', window.APIConfig.deobfuscateURL(profile.endpoint));
+    } else if (profileId !== 'dataplan') {
+      params.set('profile', profileId);
+    }
+
+    if (profileId !== 'dataplan') {
+      const model = localStorage.getItem('togetherAIModel');
+      if (model) {
+        params.set('model', model);
+      }
+    }
+
+    if (includeAPIKey) {
+      const apiKey = localStorage.getItem('togetherAPIKey');
+      if (apiKey) {
+        params.set('apikey', apiKey);
+      }
+    }
+
+    for (const key of ['prompt', 'criteria', 'dmp']) {
+      if (state.urlSources[key]) {
+        params.set(key, state.urlSources[key]);
+      }
+    }
+
+    const query = params.toString();
+    return window.location.origin + window.location.pathname + (query ? `?${query}` : '');
+  }
+
+  /**
+   * Setup the Share Link button - copies buildShareLink() to the clipboard.
+   * The "Include API key" checkbox (visible only when a key is configured)
+   * controls whether the key is embedded; its state is remembered.
+   */
+  function setupShareLinkListener() {
+    const shareBtn = document.getElementById('shareLinkBtn');
+    const keyOption = document.getElementById('shareKeyOption');
+    const keyCheckbox = document.getElementById('shareIncludeKey');
+    if (!shareBtn) return;
+
+    // Restore checkbox state and visibility
+    if (keyCheckbox) {
+      keyCheckbox.checked = localStorage.getItem('shareIncludeAPIKey') === 'true';
+      keyCheckbox.addEventListener('change', () => {
+        localStorage.setItem('shareIncludeAPIKey', keyCheckbox.checked);
+      });
+    }
+
+    // Show the checkbox only when an API key is configured
+    const updateKeyOptionVisibility = () => {
+      if (keyOption) {
+        keyOption.style.display = localStorage.getItem('togetherAPIKey') ? 'block' : 'none';
+      }
+    };
+    updateKeyOptionVisibility();
+    const apiKeyInput = document.getElementById('togetherAPIKey');
+    if (apiKeyInput) {
+      apiKeyInput.addEventListener('input', updateKeyOptionVisibility);
+    }
+
+    shareBtn.addEventListener('click', async () => {
+      const includeAPIKey = !!keyCheckbox && keyCheckbox.checked;
+      const link = buildShareLink(includeAPIKey);
+      try {
+        await navigator.clipboard.writeText(link);
+        const original = shareBtn.innerHTML;
+        shareBtn.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+        setTimeout(() => { shareBtn.innerHTML = original; }, 2000);
+      } catch {
+        // Clipboard API unavailable (e.g. non-secure context) - show the link instead
+        prompt('Copy this share link:', link);
+      }
+    });
   }
 
   /**
