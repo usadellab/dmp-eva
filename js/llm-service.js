@@ -115,10 +115,12 @@ Process ALL paragraphs. JSON output only.`
    * @returns {string} - Model identifier
    */
   function getSelectedModel() {
-    // Check if dataplan profile is active - always use GPT OSS 20B
+    // Check if dataplan profile is active - always use DeepSeek V4 Flash
+    // (switched from openai/gpt-oss-20b in September 2026 after gpt-oss-20b
+    // was scheduled for removal from the DataPLANT Community Server)
     const activeProfileId = window.localStorage.getItem('apiActiveProfile') || 'dataplan';
     if (activeProfileId === 'dataplan') {
-      return 'openai/gpt-oss-20b';
+      return 'deepseek-ai/DeepSeek-V4-Flash-0731';
     }
     return window.localStorage.getItem('togetherAIModel') || DEFAULT_MODEL;
   }
@@ -177,10 +179,22 @@ Process ALL paragraphs. JSON output only.`
    */
   async function retryWithBackoff(fetchFn, maxRetries = 3, initialDelay = 2000) {
     let lastError;
+    // Guard against a hung/unreachable server - plain fetch() has no timeout,
+    // so an unreachable host would otherwise hang a single attempt forever
+    // instead of failing into this function's own retry logic. The Promise.race
+    // doesn't cancel the underlying request, but it stops the UI from waiting
+    // on it indefinitely and lets retry/fallback proceed.
+    const REQUEST_TIMEOUT_MS = 90000;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const response = await fetchFn();
+        const response = await Promise.race([
+          fetchFn(),
+          new Promise((_, reject) => setTimeout(
+            () => reject(new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s - the server may be unreachable`)),
+            REQUEST_TIMEOUT_MS
+          ))
+        ]);
 
         // If successful, return immediately
         if (response.ok) {
@@ -385,11 +399,18 @@ Process ALL paragraphs. JSON output only.`
 
               if (!delta) continue;
 
-              // Handle reasoning content (for models like DeepSeek-R1)
-              if (delta.reasoning) {
-                accumulatedReasoning += delta.reasoning;
+              // Handle reasoning content. Field name varies by provider -
+              // DeepSeek-V4-Flash on h.dataplan.top uses "reasoning_content"
+              // (confirmed via direct API testing), not "reasoning" - the
+              // original field name here only matched some other reasoning
+              // models, silently never firing for DeepSeek and leaving both
+              // the live progress display and the accumulatedReasoning
+              // fallback below empty for the entire reasoning phase.
+              const reasoningChunk = delta.reasoning_content || delta.reasoning;
+              if (reasoningChunk) {
+                accumulatedReasoning += reasoningChunk;
                 if (onChunk) {
-                  onChunk(delta.reasoning, true); // true = isReasoning
+                  onChunk(reasoningChunk, true); // true = isReasoning
                 }
               }
 

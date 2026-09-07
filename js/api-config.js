@@ -51,9 +51,18 @@
       modelParamName: 'model',
       messagesParamName: 'messages',
       temperature: 0.3,
-      maxTokens: 8000,
+      // Reasoning models (DeepSeek V4 Flash, formerly gpt-oss) spend a
+      // variable, sometimes large, share of max_tokens on hidden reasoning
+      // before any real content - eased from 8000 to give headroom on the
+      // full DMP evaluation output before hitting finish_reason: "length"
+      // with no usable content.
+      maxTokens: 16000,
       responseFormat: null,  // gpt-oss on DataPLANT corrupts output with json_object; prompt requests JSON and parser handles it
-      streamEnabled: true
+      streamEnabled: true,
+      // Suppresses (though doesn't fully eliminate) DeepSeek's default
+      // reasoning verbosity - purely a speed/cost optimization, not required
+      // for correctness (parseSSEStream reads reasoning_content/content separately).
+      disableThinking: true
     },
     together: {
       name: 'Together.ai (Default)',
@@ -280,6 +289,11 @@
     // Add response format if specified
     if (profile.responseFormat === 'json_object') {
       body.response_format = { type: 'json_object' };
+    }
+
+    // Suppress hidden reasoning-model verbosity where requested by the profile
+    if (profile.disableThinking) {
+      body.enable_thinking = false;
     }
 
     // Add streaming if enabled in profile
