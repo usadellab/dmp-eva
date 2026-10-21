@@ -115,12 +115,13 @@ Process ALL paragraphs. JSON output only.`
    * @returns {string} - Model identifier
    */
   function getSelectedModel() {
-    // Check if dataplan profile is active - always use DeepSeek V4 Flash
+    // Check if dataplan profile is active - always use DeepSeek V4.1 Flash
     // (switched from openai/gpt-oss-20b in September 2026 after gpt-oss-20b
-    // was scheduled for removal from the DataPLANT Community Server)
+    // was scheduled for removal from the DataPLANT Community Server; then from
+    // DeepSeek-V4-Flash-0731 in October 2026, deprecated by Together 2026-10-22)
     const activeProfileId = window.localStorage.getItem('apiActiveProfile') || 'dataplan';
     if (activeProfileId === 'dataplan') {
-      return 'deepseek-ai/DeepSeek-V4-Flash-0731';
+      return 'deepseek-ai/DeepSeek-V4.1-Flash-1017';
     }
     return window.localStorage.getItem('togetherAIModel') || DEFAULT_MODEL;
   }
