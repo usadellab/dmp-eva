@@ -44,7 +44,7 @@ Default model: **Qwen3 235B** (`qwen3-235b-a22b-instruct-2507-mlx`)
 Available Together.ai models:
 - `Qwen/Qwen3-235B-A22B-Instruct-2507-tput` — Qwen3 235B
 - `openai/gpt-oss-20b` — GPT OSS 20B
-- `deepseek-ai/DeepSeek-V4-Flash-0731` — DeepSeek V4 Flash *(fixed for DataPLANT profile, hard-wired in `getSelectedModel()`)*
+- `deepseek-ai/DeepSeek-V4.1-Flash-1017` — DeepSeek V4.1 Flash *(fixed for DataPLANT profile, hard-wired in `getSelectedModel()`)*
 - `openai/gpt-oss-120b` — GPT OSS 120B
 
 ## Input Size Limits
